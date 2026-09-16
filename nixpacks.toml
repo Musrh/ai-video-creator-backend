@@ -1,3 +1,0 @@
-[phases.setup]
-nixPkgs = ["nodejs", "python3"]
-cmds = ["ln -sf $(which python3) /usr/local/bin/python"]
