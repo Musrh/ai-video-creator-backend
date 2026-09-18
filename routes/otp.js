@@ -74,13 +74,18 @@ router.post('/otp/send', async (req, res) => {
     }
 
     const code = String(crypto.randomInt(100000, 999999));
+
+    // On envoie D'ABORD le SMS, et on n'enregistre le code + le délai anti-spam
+    // qu'une fois l'envoi confirmé réussi — sinon un envoi en échec (mauvaise clé,
+    // fournisseur indisponible...) bloquerait les tentatives suivantes pendant 60s
+    // pour rien, comme c'était le cas avant ce correctif.
+    await sendSmsViaProvider(phone, `Votre code de vérification AI Video Creator : ${code}`);
+
     entry.codeHash = crypto.createHash('sha256').update(code).digest('hex');
     entry.codeExpiresAt = Date.now() + CODE_TTL_MS;
     entry.lastSentAt = Date.now();
     store[phone] = entry;
     await writeStore(store);
-
-    await sendSmsViaProvider(phone, `Votre code de vérification AI Video Creator : ${code}`);
 
     res.json({ ok: true });
   } catch (err) {
