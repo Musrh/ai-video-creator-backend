@@ -4,8 +4,10 @@ const crypto = require('crypto');
 // (sinon tous les jetons deviennent invalides à chaque redémarrage si vous changez le secret par défaut).
 const SECRET = process.env.OTP_TOKEN_SECRET || 'change-me-in-env';
 
-function signToken(phone) {
-  const payload = JSON.stringify({ phone, iat: Date.now() });
+// "identifier" est la clé interne complète du magasin otp-store.json, ex. "phone:+212..."
+// ou "email:foo@bar.com" — pas la valeur brute affichée à l'utilisateur.
+function signToken(identifier) {
+  const payload = JSON.stringify({ identifier, iat: Date.now() });
   const b64 = Buffer.from(payload).toString('base64url');
   const sig = crypto.createHmac('sha256', SECRET).update(b64).digest('base64url');
   return `${b64}.${sig}`;

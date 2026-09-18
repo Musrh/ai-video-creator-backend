@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const { markPaidSingle, markPaidSubscription, normalizePhone } = require('./otp');
+const { markPaidSingle, markPaidSubscription } = require('./otp');
 
 const router = express.Router();
 
@@ -8,7 +8,6 @@ const PAYPAL_API = process.env.PAYPAL_ENV === 'live'
   ? 'https://api-m.paypal.com'
   : 'https://api-m.sandbox.paypal.com';
 
-// Prix modifiables à tout moment sans toucher au code (variables d'environnement Railway).
 const PRICE_SINGLE_USD = process.env.PRICE_SINGLE_USD || '2.00';
 const PRICE_SUBSCRIPTION_USD = process.env.PRICE_SUBSCRIPTION_USD || '1.00';
 
@@ -31,14 +30,12 @@ function frontendUrl() {
   return process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0] : '/';
 }
 
-// POST /api/payment/paypal/create — { phone, plan: 'single' | 'subscription' }
-// Crée une commande PayPal et renvoie l'URL d'approbation vers laquelle rediriger l'utilisateur.
+// POST /api/payment/paypal/create — { identifier, type: 'phone'|'email', plan: 'single'|'subscription' }
 router.post('/payment/paypal/create', async (req, res) => {
   try {
-    const phone = normalizePhone(req.body.phone);
-    const { plan } = req.body;
-    if (!phone || !['single', 'subscription'].includes(plan)) {
-      return res.status(400).json({ error: 'Champs "phone" et "plan" ("single" ou "subscription") requis.' });
+    const { identifier, type, plan } = req.body;
+    if (!identifier || !['phone', 'email'].includes(type) || !['single', 'subscription'].includes(plan)) {
+      return res.status(400).json({ error: 'Champs "identifier", "type" ("phone"|"email") et "plan" requis.' });
     }
     if (!process.env.PAYPAL_RETURN_BASE_URL) {
       return res.status(500).json({ error: 'PAYPAL_RETURN_BASE_URL manquant dans .env (URL publique de ce backend).' });
@@ -54,7 +51,8 @@ router.post('/payment/paypal/create', async (req, res) => {
         intent: 'CAPTURE',
         purchase_units: [
           {
-            custom_id: `${phone}|${plan}`,
+            // Encodé dans custom_id, relu au retour pour savoir qui débloquer sur quelle formule
+            custom_id: `${type}|${identifier}|${plan}`,
             amount: { currency_code: 'USD', value: amount },
             description: plan === 'single' ? 'AI Video Creator — 1 vidéo' : 'AI Video Creator — Abonnement mensuel',
           },
@@ -79,7 +77,7 @@ router.post('/payment/paypal/create', async (req, res) => {
   }
 });
 
-// GET /api/payment/paypal/capture — PayPal redirige ici après approbation par l'utilisateur (?token=ORDER_ID)
+// GET /api/payment/paypal/capture — PayPal redirige ici après approbation (?token=ORDER_ID)
 router.get('/payment/paypal/capture', async (req, res) => {
   try {
     const orderId = req.query.token;
@@ -95,13 +93,13 @@ router.get('/payment/paypal/capture', async (req, res) => {
     const status = data.status;
     const capture = data.purchase_units?.[0]?.payments?.captures?.[0];
     const customId = capture?.custom_id || data.purchase_units?.[0]?.custom_id || '';
-    const [phone, plan] = customId.split('|');
+    const [type, identifier, plan] = customId.split('|');
 
-    if (status === 'COMPLETED' && phone) {
+    if (status === 'COMPLETED' && identifier) {
       if (plan === 'subscription') {
-        await markPaidSubscription(phone, 30);
+        await markPaidSubscription(identifier, type, 30);
       } else {
-        await markPaidSingle(phone, 1);
+        await markPaidSingle(identifier, type, 1);
       }
       return res.redirect(`${frontendUrl()}?payment=success`);
     }
@@ -113,7 +111,6 @@ router.get('/payment/paypal/capture', async (req, res) => {
   }
 });
 
-// GET /api/payment/paypal/cancel — l'utilisateur a annulé sur la page PayPal
 router.get('/payment/paypal/cancel', (req, res) => {
   res.redirect(`${frontendUrl()}?payment=cancelled`);
 });

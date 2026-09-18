@@ -2,20 +2,14 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs-extra');
 const path = require('path');
-const { markPaidSingle, markPaidSubscription, normalizePhone } = require('./otp');
+const { markPaidSingle, markPaidSubscription } = require('./otp');
 
 const router = express.Router();
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const PENDING_PATH = path.join(DATA_DIR, 'cmi-pending.json');
 
 // ⚠️⚠️ MODULE NON TESTÉ CONTRE UN VRAI COMPTE MARCHAND CMI ⚠️⚠️
-// Ce fichier suit le schéma standard des passerelles CMI/PayFor au Maroc :
-// redirection vers une page de paiement hébergée par CMI, paramètres transmis par
-// formulaire POST, hash SHA512 (paramètres triés alphabétiquement + Store Key).
-// MAIS les noms exacts des champs, leur ordre, l'algorithme de hash précis (ver1/ver2/ver3)
-// et l'URL de la passerelle dépendent du "kit d'intégration" que CMI remet à l'affiliation
-// marchand (accès à un environnement de test + documentation technique détaillée).
-// => Une fois ce kit reçu, comparez chaque champ ci-dessous à leur documentation et ajustez.
+// Voir les commentaires détaillés plus bas — à finaliser une fois le kit d'intégration CMI reçu.
 
 const PRICE_SINGLE_MAD = process.env.PRICE_SINGLE_MAD || '20';
 const PRICE_SUBSCRIPTION_MAD = process.env.PRICE_SUBSCRIPTION_MAD || '10';
@@ -34,27 +28,22 @@ async function writePending(store) {
   await fs.writeFile(PENDING_PATH, JSON.stringify(store, null, 2));
 }
 
-// Hash SHA512(paramètres triés alphabétiquement, concaténés par "|", + Store Key), en base64.
-// ⚠️ À vérifier précisément contre la doc CMI reçue (l'algorithme exact peut différer).
 function computeHash(params, storeKey) {
   const sortedKeys = Object.keys(params).sort();
   const hashString = sortedKeys.map((k) => params[k]).join('|') + '|' + storeKey;
   return crypto.createHash('sha512').update(hashString, 'utf8').digest('base64');
 }
 
-// POST /api/payment/cmi/create — { phone, plan: 'single' | 'subscription' }
-// Renvoie les paramètres à POSTer (via un vrai formulaire HTML, PAS un fetch) vers la page
-// de paiement hébergée CMI — c'est une redirection de navigateur complète, pas un appel API.
+// POST /api/payment/cmi/create — { identifier, type: 'phone'|'email', plan: 'single'|'subscription' }
 router.post('/payment/cmi/create', async (req, res) => {
   try {
-    const phone = normalizePhone(req.body.phone);
-    const { plan } = req.body;
-    if (!phone || !['single', 'subscription'].includes(plan)) {
-      return res.status(400).json({ error: 'Champs "phone" et "plan" ("single" ou "subscription") requis.' });
+    const { identifier, type, plan } = req.body;
+    if (!identifier || !['phone', 'email'].includes(type) || !['single', 'subscription'].includes(plan)) {
+      return res.status(400).json({ error: 'Champs "identifier", "type" ("phone"|"email") et "plan" requis.' });
     }
     if (!process.env.CMI_STORE_ID || !process.env.CMI_STORE_KEY || !process.env.CMI_GATEWAY_URL || !process.env.CMI_RETURN_BASE_URL) {
       return res.status(500).json({
-        error: 'CMI_STORE_ID / CMI_STORE_KEY / CMI_GATEWAY_URL / CMI_RETURN_BASE_URL manquants dans .env (fournis par CMI à l\'affiliation).',
+        error: 'CMI_STORE_ID / CMI_STORE_KEY / CMI_GATEWAY_URL / CMI_RETURN_BASE_URL manquants dans .env.',
       });
     }
 
@@ -66,7 +55,7 @@ router.post('/payment/cmi/create', async (req, res) => {
       clientid: process.env.CMI_STORE_ID,
       oid,
       amount,
-      currency: '504', // 504 = MAD (code ISO 4217 numérique), à confirmer dans la doc CMI
+      currency: '504', // MAD, à confirmer dans la doc CMI
       okUrl: `${returnBase}/api/payment/cmi/callback`,
       failUrl: `${returnBase}/api/payment/cmi/callback`,
       rnd: String(Date.now()),
@@ -76,9 +65,8 @@ router.post('/payment/cmi/create', async (req, res) => {
     };
     params.hash = computeHash(params, process.env.CMI_STORE_KEY);
 
-    // Correspondance oid -> (phone, plan), lue au retour dans /callback
     const pending = await readPending();
-    pending[oid] = { phone, plan, createdAt: Date.now() };
+    pending[oid] = { identifier, type, plan, createdAt: Date.now() };
     await writePending(pending);
 
     res.json({ gatewayUrl: process.env.CMI_GATEWAY_URL, params });
@@ -88,11 +76,8 @@ router.post('/payment/cmi/create', async (req, res) => {
   }
 });
 
-// POST /api/payment/cmi/callback — CMI redirige ici (succès ou échec) après paiement.
-// ⚠️ À COMPLÉTER : la vérification du hash retourné par CMI et les noms exacts des champs
-// de la réponse (ex. "ProcReturnCode", "mdStatus", "Response"...) dépendent de leur doc.
-// Ne JAMAIS déclarer un paiement validé sans avoir vérifié ce hash — sinon n'importe qui
-// peut appeler cette URL manuellement pour se débloquer gratuitement.
+// POST /api/payment/cmi/callback
+// ⚠️ À COMPLÉTER : vérification du hash retourné par CMI avant de valider quoi que ce soit.
 router.post('/payment/cmi/callback', async (req, res) => {
   try {
     const { oid } = req.body;
@@ -103,17 +88,15 @@ router.post('/payment/cmi/callback', async (req, res) => {
     if (!info) return res.status(400).send('Commande inconnue.');
 
     // --- TODO avant mise en production ---
-    // 1. Recalculer le hash attendu à partir de req.body + CMI_STORE_KEY et le comparer
-    //    à req.body.hash (nom de champ exact à confirmer dans la doc CMI).
-    // 2. Vérifier le code de statut de la transaction (ex. req.body.ProcReturnCode === '00').
-    // Tant que ces deux vérifications ne sont pas en place, NE PAS activer cette route en prod.
+    // 1. Recalculer le hash attendu à partir de req.body + CMI_STORE_KEY et le comparer.
+    // 2. Vérifier le code de statut de la transaction.
     return res.status(501).send('Callback CMI à finaliser (vérification du hash) avant mise en production.');
 
     // Une fois les vérifications ci-dessus en place, décommentez :
     // if (info.plan === 'subscription') {
-    //   await markPaidSubscription(info.phone, 30);
+    //   await markPaidSubscription(info.identifier, info.type, 30);
     // } else {
-    //   await markPaidSingle(info.phone, 1);
+    //   await markPaidSingle(info.identifier, info.type, 1);
     // }
     // delete pending[oid];
     // await writePending(pending);

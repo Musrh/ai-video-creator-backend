@@ -9,6 +9,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const { generateVideoContent, generateInspiration } = require('./text');
 const { synthesize } = require('./voice');
 const { downloadVideo, extractAudio, transcribeAudio } = require('./transcribe');
+const { requireVerifiedQuota, consumeFreeGeneration } = require('./otp');
 
 const router = express.Router();
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
@@ -81,11 +82,9 @@ function buildSegmentedVideo({ segments, titleText, outPath }) {
       `box=1:boxcolor=black@0.45:boxborderw=20:x=(w-text_w)/2:y=120:enable='between(t,0,5)'`;
 
     const cmd = ffmpeg();
-    // Inputs images (une par segment, chacune figée pendant sa propre durée)
     segments.forEach((seg) => {
       cmd.input(seg.imagePath).inputOptions(['-loop', '1', '-t', String(seg.duration)]);
     });
-    // Inputs audio (une narration par segment)
     segments.forEach((seg) => {
       cmd.input(seg.audioPath);
     });
@@ -178,8 +177,7 @@ async function resolveSource({ file, videoUrl, sourceFile, sourceInfo }) {
 }
 
 // POST /api/analyze-source
-// Analyse une vidéo source (upload "sourceVideo" ou "videoUrl") et propose
-// description/mots-clés/hashtags à titre d'inspiration, éditables ensuite par l'utilisateur.
+// (Pas de contrôle de quota ici : seul Whisper est utilisé, pas Claude ni ElevenLabs.)
 router.post('/analyze-source', upload.single('sourceVideo'), async (req, res) => {
   try {
     const { videoUrl } = req.body;
@@ -206,12 +204,8 @@ router.post('/analyze-source', upload.single('sourceVideo'), async (req, res) =>
   }
 });
 
-// POST /api/generate-video
-// Champs possibles : subject (obligatoire), voiceId (obligatoire),
-// videoUrl OU sourceVideo (fichier) OU sourceFile (référence d'une analyse précédente),
-// sourceInfo (transcript déjà connu), et en option script/description/keywords/hashtags
-// déjà édités par l'utilisateur (dans ce cas, la génération IA du texte est sautée).
-router.post('/generate-video', upload.single('sourceVideo'), async (req, res) => {
+// POST /api/generate-video — protégée par requireVerifiedQuota (numéro OU email vérifié + quota)
+router.post('/generate-video', requireVerifiedQuota, upload.single('sourceVideo'), async (req, res) => {
   try {
     const { subject, videoUrl, sourceFile, sourceInfo, voiceId, script, description } = req.body;
     if (!subject) return res.status(400).json({ error: 'Le champ "subject" est requis.' });
@@ -224,7 +218,6 @@ router.post('/generate-video', upload.single('sourceVideo'), async (req, res) =>
       sourceInfo,
     });
 
-    // Si l'utilisateur a déjà édité le contenu (étape d'inspiration), on ne regénère pas via Claude
     let content;
     if (script && description) {
       content = {
@@ -242,6 +235,8 @@ router.post('/generate-video', upload.single('sourceVideo'), async (req, res) =>
     const outPath = path.join(OUTPUT_DIR, `video_${Date.now()}.mp4`);
     await buildFinalVideo({ backgroundPath, audioPath: narrationPath, titleText: subject, outPath });
 
+    await consumeFreeGeneration(req.verifiedKey);
+
     res.json({
       videoUrl: `/output/${path.basename(outPath)}`,
       audioUrl: `/output/${path.basename(narrationPath)}`,
@@ -258,8 +253,6 @@ router.post('/generate-video', upload.single('sourceVideo'), async (req, res) =>
 });
 
 // POST /api/regenerate-voice
-// Régénère uniquement la narration + le montage avec une nouvelle voix,
-// en réutilisant le script déjà validé et la vidéo source déjà connue (sourceFile).
 router.post('/regenerate-voice', async (req, res) => {
   try {
     const { script, voiceId, sourceFile, subject } = req.body;
@@ -286,13 +279,8 @@ router.post('/regenerate-voice', async (req, res) => {
   }
 });
 
-// POST /api/generate-video-segments
-// Champs : voiceId, subject, segments (JSON.stringify d'un tableau de textes, un par paragraphe),
-// images (fichiers, dans le même ordre que "segments" — une image par paragraphe).
-// Synthétise chaque paragraphe séparément (durée exacte connue), construit un clip par
-// paragraphe (image figée + sa narration), puis concatène le tout en une seule vidéo finale.
-router.post('/generate-video-segments', upload.array('images', 20), async (req, res) => {
-  const tmpAudioFiles = [];
+// POST /api/generate-video-segments — protégée par requireVerifiedQuota, comme /generate-video
+router.post('/generate-video-segments', requireVerifiedQuota, upload.array('images', 20), async (req, res) => {
   try {
     const { voiceId, subject } = req.body;
     if (!voiceId) return res.status(400).json({ error: 'Le champ "voiceId" est requis.' });
@@ -310,17 +298,17 @@ router.post('/generate-video-segments', upload.array('images', 20), async (req, 
       return res.status(400).json({ error: 'Il faut exactement une image par paragraphe.' });
     }
 
-    // Synthèse vocale paragraphe par paragraphe (durée réelle connue après coup via ffprobe)
     const segments = [];
     for (let i = 0; i < texts.length; i += 1) {
       const audioPath = await synthesize(texts[i], voiceId);
-      tmpAudioFiles.push(audioPath);
       const duration = await ffprobeDuration(audioPath);
       segments.push({ imagePath: req.files[i].path, audioPath, duration });
     }
 
     const outPath = path.join(OUTPUT_DIR, `video_${Date.now()}.mp4`);
     await buildSegmentedVideo({ segments, titleText: subject, outPath });
+
+    await consumeFreeGeneration(req.verifiedKey);
 
     res.json({
       videoUrl: `/output/${path.basename(outPath)}`,

@@ -8,10 +8,7 @@ function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY);
 }
 
-// ⚠️ Ce handler doit être monté dans server.js AVANT express.json(), avec son propre
-// middleware express.raw({ type: 'application/json' }) — Stripe exige le corps de requête
-// BRUT (non parsé) pour recalculer et vérifier la signature. Si express.json() global
-// a déjà consommé le corps avant d'arriver ici, la vérification échouera systématiquement.
+// ⚠️ Doit être monté dans server.js AVANT express.json(), avec express.raw({ type: 'application/json' }).
 module.exports = async function stripeWebhookHandler(req, res) {
   let stripe;
   try {
@@ -29,7 +26,6 @@ module.exports = async function stripeWebhookHandler(req, res) {
 
   let event;
   try {
-    // req.body doit être un Buffer brut ici (voir express.raw() dans server.js)
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.error('Signature Stripe invalide:', err.message);
@@ -38,15 +34,15 @@ module.exports = async function stripeWebhookHandler(req, res) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const { phone, plan } = session.metadata || {};
-    if (phone) {
+    const { identifier, type, plan } = session.metadata || {};
+    if (identifier && type) {
       if (plan === 'subscription') {
-        await markPaidSubscription(phone, 30);
+        await markPaidSubscription(identifier, type, 30);
       } else {
-        await markPaidSingle(phone, 1);
+        await markPaidSingle(identifier, type, 1);
       }
     } else {
-      console.warn('Webhook Stripe reçu sans "phone" en métadonnée — impossible de débloquer un accès.');
+      console.warn('Webhook Stripe reçu sans métadonnées complètes — impossible de débloquer un accès.');
     }
   }
 

@@ -35,9 +35,29 @@ async function writeStore(store) {
 function normalizePhone(phone) {
   return String(phone || '').trim().replace(/[^\d+]/g, '');
 }
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
-function defaultEntry() {
+// Un identifiant vérifié est soit un numéro, soit un email — stocké dans le même magasin,
+// sous une clé préfixée par son type pour éviter toute collision entre les deux ("phone:..."
+// vs "email:..."). "type" doit être 'phone' ou 'email'.
+function normalizeIdentifier(rawValue, type) {
+  if (type === 'email') {
+    const email = normalizeEmail(rawValue);
+    return { key: `email:${email}`, value: email, valid: isValidEmail(email) };
+  }
+  const phone = normalizePhone(rawValue);
+  return { key: `phone:${phone}`, value: phone, valid: phone.length >= 8 };
+}
+
+function defaultEntry(type, value) {
   return {
+    type, // 'phone' | 'email'
+    value,
     verified: false,
     freeUsed: 0,
     paidCredits: 0, // crédits vidéo-unique achetés, non encore consommés
@@ -46,9 +66,7 @@ function defaultEntry() {
 }
 
 // --- Envoi du SMS ---
-// ⚠️ À adapter selon la documentation de votre fournisseur SMS marocain retenu :
-// l'endpoint, les en-têtes d'authentification et le format du corps de requête varient
-// d'un fournisseur à l'autre. Ceci est un exemple générique (Bearer token + JSON), à ajuster.
+// ⚠️ À adapter selon la documentation de votre fournisseur SMS marocain retenu.
 async function sendSmsViaProvider(phone, message) {
   if (!process.env.SMS_PROVIDER_URL || !process.env.SMS_PROVIDER_API_KEY) {
     throw new Error('SMS_PROVIDER_URL / SMS_PROVIDER_API_KEY manquants dans .env');
@@ -60,14 +78,50 @@ async function sendSmsViaProvider(phone, message) {
   );
 }
 
-// POST /api/otp/send — { phone } -> génère un code à 6 chiffres et l'envoie par SMS
+// --- Envoi de l'email (SMTP classique via nodemailer, ex. Gmail + mot de passe d'application) ---
+// Contrairement à un service comme Resend sans domaine vérifié, un envoi SMTP authentifié
+// depuis un vrai compte email peut être reçu par n'importe quel destinataire dès le départ.
+let mailTransporter = null;
+function getMailTransporter() {
+  if (mailTransporter) return mailTransporter;
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error('SMTP_HOST / SMTP_USER / SMTP_PASS manquants dans .env');
+  }
+  const nodemailer = require('nodemailer');
+  mailTransporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: process.env.SMTP_SECURE !== 'false', // true par défaut (port 465, TLS implicite)
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+  return mailTransporter;
+}
+
+async function sendEmailViaProvider(email, code) {
+  const transporter = getMailTransporter();
+  const from = process.env.EMAIL_FROM || process.env.SMTP_USER;
+  await transporter.sendMail({
+    from,
+    to: email,
+    subject: 'Votre code de vérification AI Video Creator',
+    html: `<p>Votre code de vérification est : <strong>${code}</strong></p><p>Il expire dans 5 minutes.</p>`,
+  });
+}
+
+// POST /api/otp/send — { identifier, type: 'phone' | 'email' }
 router.post('/otp/send', async (req, res) => {
   try {
-    const phone = normalizePhone(req.body.phone);
-    if (!phone || phone.length < 8) return res.status(400).json({ error: 'Numéro de téléphone invalide.' });
+    const { type } = req.body;
+    if (!['phone', 'email'].includes(type)) {
+      return res.status(400).json({ error: 'Le champ "type" doit être "phone" ou "email".' });
+    }
+    const { key, value, valid } = normalizeIdentifier(req.body.identifier, type);
+    if (!valid) {
+      return res.status(400).json({ error: type === 'email' ? 'Email invalide.' : 'Numéro de téléphone invalide.' });
+    }
 
     const store = await readStore();
-    const entry = store[phone] || defaultEntry();
+    const entry = store[key] || defaultEntry(type, value);
 
     if (entry.lastSentAt && Date.now() - entry.lastSentAt < RESEND_COOLDOWN_MS) {
       return res.status(429).json({ error: 'Veuillez patienter avant de redemander un code.' });
@@ -75,16 +129,19 @@ router.post('/otp/send', async (req, res) => {
 
     const code = String(crypto.randomInt(100000, 999999));
 
-    // On envoie D'ABORD le SMS, et on n'enregistre le code + le délai anti-spam
-    // qu'une fois l'envoi confirmé réussi — sinon un envoi en échec (mauvaise clé,
-    // fournisseur indisponible...) bloquerait les tentatives suivantes pendant 60s
-    // pour rien, comme c'était le cas avant ce correctif.
-    await sendSmsViaProvider(phone, `Votre code de vérification AI Video Creator : ${code}`);
+    // On envoie D'ABORD le code, et on n'enregistre le hash + le délai anti-spam qu'une
+    // fois l'envoi confirmé réussi — sinon un envoi en échec bloquerait les tentatives
+    // suivantes pendant 60s pour rien.
+    if (type === 'email') {
+      await sendEmailViaProvider(value, code);
+    } else {
+      await sendSmsViaProvider(value, `Votre code de vérification AI Video Creator : ${code}`);
+    }
 
     entry.codeHash = crypto.createHash('sha256').update(code).digest('hex');
     entry.codeExpiresAt = Date.now() + CODE_TTL_MS;
     entry.lastSentAt = Date.now();
-    store[phone] = entry;
+    store[key] = entry;
     await writeStore(store);
 
     res.json({ ok: true });
@@ -94,16 +151,19 @@ router.post('/otp/send', async (req, res) => {
   }
 });
 
-// POST /api/otp/verify — { phone, code } -> valide le code, renvoie un jeton signé
+// POST /api/otp/verify — { identifier, type, code } -> valide le code, renvoie un jeton signé
 router.post('/otp/verify', async (req, res) => {
   try {
-    const phone = normalizePhone(req.body.phone);
-    const { code } = req.body;
-    if (!phone || !code) return res.status(400).json({ error: 'Téléphone et code requis.' });
+    const { type, code } = req.body;
+    if (!['phone', 'email'].includes(type)) {
+      return res.status(400).json({ error: 'Le champ "type" doit être "phone" ou "email".' });
+    }
+    const { key, value, valid } = normalizeIdentifier(req.body.identifier, type);
+    if (!valid || !code) return res.status(400).json({ error: 'Identifiant et code requis.' });
 
     const store = await readStore();
-    const entry = store[phone];
-    if (!entry || !entry.codeHash) return res.status(400).json({ error: 'Aucun code en attente pour ce numéro.' });
+    const entry = store[key];
+    if (!entry || !entry.codeHash) return res.status(400).json({ error: 'Aucun code en attente pour cet identifiant.' });
     if (Date.now() > entry.codeExpiresAt) return res.status(400).json({ error: 'Code expiré, redemandez-en un.' });
 
     const codeHash = crypto.createHash('sha256').update(String(code)).digest('hex');
@@ -112,10 +172,10 @@ router.post('/otp/verify', async (req, res) => {
     entry.verified = true;
     entry.codeHash = null;
     entry.codeExpiresAt = null;
-    store[phone] = entry;
+    store[key] = entry;
     await writeStore(store);
 
-    const token = signToken(phone);
+    const token = signToken(key);
     res.json({ ok: true, token });
   } catch (err) {
     console.error(err.response?.data || err.message);
@@ -135,33 +195,32 @@ function computeQuotaView(entry) {
   };
 }
 
-// GET /api/otp/status — header x-verify-token -> statut du quota pour ce numéro
+// GET /api/otp/status — header x-verify-token -> statut du quota pour cet identifiant
 router.get('/otp/status', async (req, res) => {
   try {
     const payload = verifyToken(req.headers['x-verify-token']);
     if (!payload) return res.status(401).json({ error: 'Non vérifié.' });
 
     const store = await readStore();
-    const entry = store[payload.phone];
+    const entry = store[payload.identifier];
     if (!entry || !entry.verified) return res.status(401).json({ error: 'Non vérifié.' });
 
-    res.json({ phone: payload.phone, ...computeQuotaView(entry) });
+    res.json({ identifier: entry.value, type: entry.type, ...computeQuotaView(entry) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // --- Middleware réutilisé par les routes de génération vidéo (video.js) ---
-// Bloque si le numéro n'est pas vérifié, ou si free + crédits payés + abonnement sont tous épuisés.
 async function requireVerifiedQuota(req, res, next) {
   const payload = verifyToken(req.headers['x-verify-token']);
-  if (!payload || !payload.phone) {
-    return res.status(401).json({ error: 'Vérification par SMS requise.' });
+  if (!payload || !payload.identifier) {
+    return res.status(401).json({ error: 'Vérification requise.' });
   }
   const store = await readStore();
-  const entry = store[payload.phone];
+  const entry = store[payload.identifier];
   if (!entry || !entry.verified) {
-    return res.status(401).json({ error: 'Numéro non vérifié.' });
+    return res.status(401).json({ error: 'Identifiant non vérifié.' });
   }
 
   const view = computeQuotaView(entry);
@@ -172,49 +231,51 @@ async function requireVerifiedQuota(req, res, next) {
       paymentRequired: true,
     });
   }
-  req.verifiedPhone = payload.phone;
+  req.verifiedKey = payload.identifier; // clé interne ("phone:..." ou "email:...")
+  req.verifiedValue = entry.value; // valeur lisible (le numéro ou l'email)
   next();
 }
 
-// Consomme un essai après une génération réussie, dans l'ordre : gratuit -> abonnement (illimité,
-// rien à décrémenter) -> crédit payé à l'unité.
-async function consumeFreeGeneration(phone) {
-  if (!phone) return;
+// Consomme un essai après une génération réussie, dans l'ordre : gratuit -> abonnement
+// (illimité, rien à décrémenter) -> crédit payé à l'unité. "key" = clé interne complète.
+async function consumeFreeGeneration(key) {
+  if (!key) return;
   const store = await readStore();
-  const entry = store[phone];
+  const entry = store[key];
   if (!entry) return;
 
   const view = computeQuotaView(entry);
   if (view.freeRemaining > 0) {
     entry.freeUsed = (entry.freeUsed || 0) + 1;
   } else if (view.subscriptionActive) {
-    // rien à décrémenter : accès illimité jusqu'à expiration de l'abonnement
+    // rien à décrémenter
   } else if (view.paidCredits > 0) {
     entry.paidCredits = (entry.paidCredits || 0) - 1;
   }
 
-  store[phone] = entry;
+  store[key] = entry;
   await writeStore(store);
 }
 
-// Appelé par les modules de paiement (paypal.js / cmi.js) une fois un paiement confirmé.
-async function markPaidSingle(phone, credits = 1) {
-  const p = normalizePhone(phone);
+// Appelés par les modules de paiement une fois un paiement confirmé.
+// "identifier" et "type" viennent des métadonnées enregistrées à la création du paiement.
+async function markPaidSingle(identifier, type, credits = 1) {
+  const { key, value } = normalizeIdentifier(identifier, type);
   const store = await readStore();
-  const entry = store[p] || defaultEntry();
+  const entry = store[key] || defaultEntry(type, value);
   entry.paidCredits = (entry.paidCredits || 0) + credits;
-  store[p] = entry;
+  store[key] = entry;
   await writeStore(store);
 }
 
-async function markPaidSubscription(phone, days = 30) {
-  const p = normalizePhone(phone);
+async function markPaidSubscription(identifier, type, days = 30) {
+  const { key, value } = normalizeIdentifier(identifier, type);
   const store = await readStore();
-  const entry = store[p] || defaultEntry();
+  const entry = store[key] || defaultEntry(type, value);
   const now = Date.now();
   const base = entry.subscriptionUntil && entry.subscriptionUntil > now ? entry.subscriptionUntil : now;
   entry.subscriptionUntil = base + days * 24 * 60 * 60 * 1000;
-  store[p] = entry;
+  store[key] = entry;
   await writeStore(store);
 }
 
@@ -223,5 +284,5 @@ module.exports.requireVerifiedQuota = requireVerifiedQuota;
 module.exports.consumeFreeGeneration = consumeFreeGeneration;
 module.exports.markPaidSingle = markPaidSingle;
 module.exports.markPaidSubscription = markPaidSubscription;
-module.exports.normalizePhone = normalizePhone;
+module.exports.normalizeIdentifier = normalizeIdentifier;
 module.exports.FREE_GENERATIONS = FREE_GENERATIONS;
