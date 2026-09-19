@@ -3,8 +3,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs-extra');
 const ffmpegPath = require('ffmpeg-static');
+const ffprobeStatic = require('ffprobe-static');
 const ffmpeg = require('fluent-ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const { generateVideoContent, generateInspiration } = require('./text');
 const { synthesize } = require('./voice');

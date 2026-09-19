@@ -14,7 +14,13 @@ const PRICE_SINGLE_USD = process.env.PRICE_SINGLE_USD || '2.00';
 const PRICE_SUBSCRIPTION_USD = process.env.PRICE_SUBSCRIPTION_USD || '1.00';
 
 function frontendUrl() {
-  return process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0] : '/';
+  const raw = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0].trim() : '';
+  if (!/^https?:\/\//i.test(raw)) {
+    throw new Error(
+      `CORS_ORIGIN invalide ou manquant ("${raw}") — doit être une URL absolue commençant par http:// ou https://`
+    );
+  }
+  return raw;
 }
 
 // POST /api/payment/stripe/create — { identifier, type: 'phone'|'email', plan: 'single'|'subscription' }

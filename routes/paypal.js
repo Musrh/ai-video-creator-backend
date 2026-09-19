@@ -27,7 +27,13 @@ async function getAccessToken() {
 }
 
 function frontendUrl() {
-  return process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0] : '/';
+  const raw = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0].trim() : '';
+  if (!/^https?:\/\//i.test(raw)) {
+    throw new Error(
+      `CORS_ORIGIN invalide ou manquant ("${raw}") — doit être une URL absolue commençant par http:// ou https://`
+    );
+  }
+  return raw;
 }
 
 // POST /api/payment/paypal/create — { identifier, type: 'phone'|'email', plan: 'single'|'subscription' }
