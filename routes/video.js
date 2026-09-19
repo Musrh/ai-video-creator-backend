@@ -19,17 +19,6 @@ const upload = multer({ dest: UPLOADS_DIR });
 const W = 1080;
 const H = 1920; // format vertical (Reels/Shorts/TikTok)
 
-// --- Utilitaires fond vidéo/image (vidéo source en boucle, ou fond généré) ---
-
-function addBackgroundInput(cmd, backgroundPath) {
-  if (backgroundPath) {
-    cmd.input(backgroundPath).inputOptions(['-stream_loop', '-1']);
-  } else {
-    // Fond généré (dégradé simple) si aucune vidéo source n'est fournie
-    cmd.input(`color=c=0x1a1a2e:s=${W}x${H}:r=30`).inputOptions(['-f', 'lavfi']);
-  }
-}
-
 // Construit la vidéo finale : fond (vidéo source en boucle, ou fond généré) + narration + titre incrusté
 function buildFinalVideo({ backgroundPath, audioPath, titleText, outPath }) {
   return new Promise((resolve, reject) => {
@@ -37,24 +26,36 @@ function buildFinalVideo({ backgroundPath, audioPath, titleText, outPath }) {
     const drawtext = `drawtext=text='${safeTitle}':fontcolor=white:fontsize=54:` +
       `box=1:boxcolor=black@0.45:boxborderw=20:x=(w-text_w)/2:y=120:enable='between(t,0,5)'`;
 
-    const cmd = ffmpeg();
-    addBackgroundInput(cmd, backgroundPath);
-    cmd.input(audioPath);
+    // Avec une vidéo source : elle devient l'input 0 (bouclée), l'audio l'input 1.
+    // Sans vidéo source : le fond coloré est généré DIRECTEMENT dans le graphe de filtres
+    // (pas via un input séparé "-f lavfi", qui dépend d'un module pas toujours présent selon
+    // le build ffmpeg utilisé) — l'audio devient alors l'unique input, à l'index 0.
+    function buildCommand(withDrawtext) {
+      const cmd = ffmpeg();
+      const textFilter = withDrawtext ? `,${drawtext}` : '';
 
-    cmd
-      .complexFilter([
-        `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},${drawtext}[v]`,
-      ])
-      .outputOptions(['-map', '[v]', '-map', '1:a:0', '-shortest', '-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p'])
+      if (backgroundPath) {
+        cmd.input(backgroundPath).inputOptions(['-stream_loop', '-1']);
+        cmd.input(audioPath);
+        cmd.complexFilter([
+          `[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${textFilter}[v]`,
+        ]);
+        cmd.outputOptions(['-map', '[v]', '-map', '1:a:0', '-shortest', '-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p']);
+      } else {
+        cmd.input(audioPath);
+        cmd.complexFilter([
+          `color=c=0x1a1a2e:s=${W}x${H}:r=30${textFilter}[v]`,
+        ]);
+        cmd.outputOptions(['-map', '[v]', '-map', '0:a:0', '-shortest', '-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p']);
+      }
+      return cmd;
+    }
+
+    buildCommand(true)
       .on('end', () => resolve(outPath))
       .on('error', (err) => {
         // Repli sans texte incrusté si drawtext échoue (ex: police manquante sur le système)
-        const fallback = ffmpeg();
-        addBackgroundInput(fallback, backgroundPath);
-        fallback
-          .input(audioPath)
-          .complexFilter([`[0:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[v]`])
-          .outputOptions(['-map', '[v]', '-map', '1:a:0', '-shortest', '-c:v', 'libx264', '-c:a', 'aac', '-pix_fmt', 'yuv420p'])
+        buildCommand(false)
           .on('end', () => resolve(outPath))
           .on('error', (err2) => reject(err2))
           .save(outPath);
