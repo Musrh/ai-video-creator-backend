@@ -100,7 +100,7 @@ router.post('/payment/cmi/callback', async (req, res) => {
     // }
     // delete pending[oid];
     // await writePending(pending);
-    // const frontendUrl = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0] : '/';
+    // const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : '/';
     // res.redirect(`${frontendUrl}?payment=success`);
   } catch (err) {
     console.error(err.message);

@@ -14,13 +14,13 @@ const PRICE_SINGLE_USD = process.env.PRICE_SINGLE_USD || '2.00';
 const PRICE_SUBSCRIPTION_USD = process.env.PRICE_SUBSCRIPTION_USD || '1.00';
 
 function frontendUrl() {
-  const raw = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0].trim() : '';
+  const raw = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim() : '';
   if (!/^https?:\/\//i.test(raw)) {
     throw new Error(
-      `CORS_ORIGIN invalide ou manquant ("${raw}") — doit être une URL absolue commençant par http:// ou https://`
+      `FRONTEND_URL invalide ou manquant ("${raw}") — doit être l'URL complète de votre frontend (avec son sous-chemin GitHub Pages éventuel), ex. https://musrh.github.io/ai-video-creator-frontend`
     );
   }
-  return raw;
+  return raw.replace(/\/$/, '');
 }
 
 // POST /api/payment/stripe/create — { identifier, type: 'phone'|'email', plan: 'single'|'subscription' }

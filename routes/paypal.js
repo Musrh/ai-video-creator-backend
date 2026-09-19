@@ -27,13 +27,13 @@ async function getAccessToken() {
 }
 
 function frontendUrl() {
-  const raw = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0].trim() : '';
+  const raw = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim() : '';
   if (!/^https?:\/\//i.test(raw)) {
     throw new Error(
-      `CORS_ORIGIN invalide ou manquant ("${raw}") — doit être une URL absolue commençant par http:// ou https://`
+      `FRONTEND_URL invalide ou manquant ("${raw}") — doit être l'URL complète de votre frontend (avec son sous-chemin GitHub Pages éventuel), ex. https://musrh.github.io/ai-video-creator-frontend`
     );
   }
-  return raw;
+  return raw.replace(/\/$/, '');
 }
 
 // POST /api/payment/paypal/create — { identifier, type: 'phone'|'email', plan: 'single'|'subscription' }
