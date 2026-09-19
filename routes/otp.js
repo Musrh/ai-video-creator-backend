@@ -78,34 +78,26 @@ async function sendSmsViaProvider(phone, message) {
   );
 }
 
-// --- Envoi de l'email (SMTP classique via nodemailer, ex. Gmail + mot de passe d'application) ---
-// Contrairement à un service comme Resend sans domaine vérifié, un envoi SMTP authentifié
-// depuis un vrai compte email peut être reçu par n'importe quel destinataire dès le départ.
-let mailTransporter = null;
-function getMailTransporter() {
-  if (mailTransporter) return mailTransporter;
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    throw new Error('SMTP_HOST / SMTP_USER / SMTP_PASS manquants dans .env');
-  }
-  const nodemailer = require('nodemailer');
-  mailTransporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: process.env.SMTP_SECURE !== 'false', // true par défaut (port 465, TLS implicite)
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  return mailTransporter;
-}
-
+// --- Envoi de l'email (API HTTPS Brevo — PAS leur relais SMTP, qui serait bloqué sur Railway) ---
+// ⚠️ Ne PAS utiliser smtp-relay.brevo.com ici : Railway bloque tous les ports SMTP sortants
+// (25, 465, 587) sur les plans Free/Trial/Hobby. On utilise uniquement api.brevo.com, un appel
+// HTTPS classique (port 443, jamais bloqué).
+// Brevo ne demande de vérifier qu'UNE SEULE adresse email (code à 6 chiffres envoyé à cette
+// adresse, pas de domaine requis) puis permet d'envoyer vers n'importe quel destinataire.
 async function sendEmailViaProvider(email, code) {
-  const transporter = getMailTransporter();
-  const from = process.env.EMAIL_FROM || process.env.SMTP_USER;
-  await transporter.sendMail({
-    from,
-    to: email,
-    subject: 'Votre code de vérification AI Video Creator',
-    html: `<p>Votre code de vérification est : <strong>${code}</strong></p><p>Il expire dans 5 minutes.</p>`,
-  });
+  if (!process.env.BREVO_API_KEY || !process.env.EMAIL_FROM) {
+    throw new Error('BREVO_API_KEY / EMAIL_FROM manquants dans .env');
+  }
+  await axios.post(
+    'https://api.brevo.com/v3/smtp/email',
+    {
+      sender: { email: process.env.EMAIL_FROM },
+      to: [{ email }],
+      subject: 'Votre code de vérification AI Video Creator',
+      htmlContent: `<p>Votre code de vérification est : <strong>${code}</strong></p><p>Il expire dans 5 minutes.</p>`,
+    },
+    { headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json' } }
+  );
 }
 
 // POST /api/otp/send — { identifier, type: 'phone' | 'email' }
