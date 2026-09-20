@@ -203,6 +203,35 @@ router.get('/otp/status', async (req, res) => {
   }
 });
 
+// POST /api/otp/debug-exhaust — header x-verify-token -> épuise artificiellement le quota
+// gratuit de cet identifiant, pour tester le paywall/paiement sans consommer 2 vraies
+// générations (donc sans dépenser Anthropic/ElevenLabs à chaque test).
+// ⚠️ Désactivée par défaut : ne fonctionne que si ENABLE_DEBUG_ROUTES=true est présent dans
+// .env. Retirez cette variable (ou mettez-la à autre chose) avant d'ouvrir l'app à de vrais
+// visiteurs — cette route permet à n'importe qui de modifier SON PROPRE quota, sans affecter
+// les autres, mais elle n'a aucune utilité une fois en production.
+router.post('/otp/debug-exhaust', async (req, res) => {
+  if (process.env.ENABLE_DEBUG_ROUTES !== 'true') {
+    return res.status(404).json({ error: 'Route désactivée.' });
+  }
+  try {
+    const payload = verifyToken(req.headers['x-verify-token']);
+    if (!payload) return res.status(401).json({ error: 'Non vérifié.' });
+
+    const store = await readStore();
+    const entry = store[payload.identifier];
+    if (!entry || !entry.verified) return res.status(401).json({ error: 'Non vérifié.' });
+
+    entry.freeUsed = FREE_GENERATIONS;
+    store[payload.identifier] = entry;
+    await writeStore(store);
+
+    res.json({ ok: true, ...computeQuotaView(entry) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Middleware réutilisé par les routes de génération vidéo (video.js) ---
 async function requireVerifiedQuota(req, res, next) {
   const payload = verifyToken(req.headers['x-verify-token']);
