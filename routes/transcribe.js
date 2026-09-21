@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
 const fs = require('fs-extra');
+const os = require('os');
 const path = require('path');
 const FormData = require('form-data');
 const ffmpegPath = require('ffmpeg-static');
@@ -27,16 +28,36 @@ function isPlatformUrl(url) {
   }
 }
 
+// YouTube bloque de plus en plus souvent les téléchargements venant d'IP de serveurs cloud
+// ("Sign in to confirm you're not a bot"). Fournir de vrais cookies (d'un compte YouTube
+// connecté, exportés depuis un navigateur) contourne généralement ce blocage. Le contenu du
+// fichier cookies.txt est stocké en base64 dans YOUTUBE_COOKIES_BASE64 (évite les soucis de
+// retours à la ligne dans une variable d'environnement), puis réécrit sur disque une seule fois.
+let cachedCookiesPath = null;
+function getCookiesFilePath() {
+  if (!process.env.YOUTUBE_COOKIES_BASE64) return null;
+  if (cachedCookiesPath) return cachedCookiesPath;
+  const filePath = path.join(os.tmpdir(), 'yt-cookies.txt');
+  const content = Buffer.from(process.env.YOUTUBE_COOKIES_BASE64, 'base64').toString('utf8');
+  fs.writeFileSync(filePath, content);
+  cachedCookiesPath = filePath;
+  return filePath;
+}
+
 // Télécharge une vidéo YouTube/TikTok via yt-dlp (gère extraction du flux + fusion audio/vidéo)
 async function downloadWithYtDlp(url, destPath) {
-  // destPath se termine par .mp4 ; yt-dlp choisit lui-même le meilleur format compatible mp4
-  await ytDlp(url, {
+  const options = {
     output: destPath,
     format: 'mp4/best[ext=mp4]/best',
     noPlaylist: true,
     noCheckCertificates: true,
     noWarnings: true,
-  });
+  };
+  const cookiesPath = getCookiesFilePath();
+  if (cookiesPath) options.cookies = cookiesPath;
+
+  // destPath se termine par .mp4 ; yt-dlp choisit lui-même le meilleur format compatible mp4
+  await ytDlp(url, options);
   // yt-dlp peut parfois écrire une extension différente si mp4 indisponible : on vérifie
   if (!(await fs.pathExists(destPath))) {
     const dir = path.dirname(destPath);
