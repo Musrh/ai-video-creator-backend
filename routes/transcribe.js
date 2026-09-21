@@ -50,6 +50,12 @@ async function downloadWithYtDlp(url, destPath) {
     output: destPath,
     format: 'mp4/best[ext=mp4]/best',
     noPlaylist: true,
+    // Contournement pour l'erreur YouTube "The page needs to be reloaded", actuellement
+    // répandue (bug ouvert côté yt-dlp/YouTube, pas spécifique à cette app) : forcer
+    // l'extraction via le client "android" évite souvent ce message précis.
+    // ⚠️ Contournement à court terme, pas garanti indéfiniment si YouTube change encore
+    // son comportement — à surveiller si l'erreur revient malgré ça.
+    extractorArgs: 'youtube:player_client=android',
     noCheckCertificates: true,
     noWarnings: true,
   };
