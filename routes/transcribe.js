@@ -48,7 +48,7 @@ function getCookiesFilePath() {
 async function downloadWithYtDlp(url, destPath) {
   const options = {
     output: destPath,
-    format: 'mp4/best[ext=mp4]/best',
+    format: 'best',
     noPlaylist: true,
     // Contournement pour l'erreur YouTube "The page needs to be reloaded", actuellement
     // répandue (bug ouvert côté yt-dlp/YouTube, pas spécifique à cette app) : forcer
