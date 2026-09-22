@@ -66,7 +66,7 @@ async function downloadWithYtDlp(url, destPath) {
 
   const options = {
     output: destPath,
-    format: 'bv*+ba/b',
+    format: 'best',
     noPlaylist: true,
     // Client mweb + fourniture du PO Token via le serveur BgUtils local
     extractorArgs:
