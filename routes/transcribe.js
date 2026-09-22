@@ -8,6 +8,11 @@ const FormData = require('form-data');
 const ffmpegPath = require('ffmpeg-static');
 const ffmpeg = require('fluent-ffmpeg');
 const ytDlp = require('yt-dlp-exec');
+
+ytDlp('--version')
+  .then(version => console.log('🟢 yt-dlp version:', version))
+  .catch(err => console.error('❌ yt-dlp version error:', err.message));
+
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const router = express.Router();
