@@ -3,24 +3,59 @@ set -e
 
 BGUTIL_VERSION="2.0.0"
 
-echo "📦 Installation de BgUtils PO Token Provider v${BGUTIL_VERSION}..."
+echo "========================================"
+echo "Installation yt-dlp + BgUtils"
+echo "========================================"
+
+echo "Python :"
+python3 --version || true
+
+echo "Installation de yt-dlp..."
+
+python3 -m pip install --upgrade yt-dlp
+
+echo "Version yt-dlp :"
+python3 -m yt_dlp --version
+
+echo "Installation de BgUtils PO Token Provider..."
 
 rm -rf bgutil-ytdlp-pot-provider
 
-git clone --single-branch --branch "${BGUTIL_VERSION}" \
-  https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git \
-  bgutil-ytdlp-pot-provider
+git clone 
+--single-branch 
+--branch "${BGUTIL_VERSION}" 
+https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git 
+bgutil-ytdlp-pot-provider
 
 cd bgutil-ytdlp-pot-provider
 
-mkdir -p "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider"
-cp -r plugin/* "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
+echo "Installation du serveur BgUtils..."
 
 cd server
 
 npm ci
+
 npx tsc
 
-echo "✅ BgUtils v${BGUTIL_VERSION} installé."
-echo "📁 Plugin : $HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
-echo "📁 Provider : $PWD/build/"
+cd ../..
+
+echo "Installation du plugin yt-dlp..."
+
+mkdir -p "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider"
+
+cp -r 
+bgutil-ytdlp-pot-provider/plugin/* 
+"$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
+
+echo "========================================"
+echo "Installation terminee"
+echo "========================================"
+
+echo "yt-dlp :"
+python3 -m yt_dlp --version
+
+echo "Plugin :"
+ls -la "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider"
+
+echo "BgUtils :"
+ls -la bgutil-ytdlp-pot-provider/server/build
