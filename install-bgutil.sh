@@ -2,12 +2,13 @@
 set -e
 
 BGUTIL_VERSION="2.0.0"
-BGUTIL_REPOSITORY="https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git"
+BGUTIL_URL="https://github.com/Brainicism/bgutil-ytdlp-pot-provider/archive/refs/tags/${BGUTIL_VERSION}.tar.gz"
 
 echo "========================================"
 echo "Installation yt-dlp + BgUtils"
 echo "========================================"
 
+echo ""
 echo "Python :"
 python3 --version
 
@@ -22,26 +23,44 @@ python3 -m yt_dlp --version
 
 echo ""
 echo "Installation de BgUtils PO Token Provider..."
-echo "Repository : ${BGUTIL_REPOSITORY}"
 echo "Version : ${BGUTIL_VERSION}"
 
 rm -rf bgutil-ytdlp-pot-provider
+rm -rf "bgutil-ytdlp-pot-provider-${BGUTIL_VERSION}"
+rm -f bgutil.tar.gz
 
-git clone 
---single-branch 
---branch "${BGUTIL_VERSION}" 
-"${BGUTIL_REPOSITORY}" 
+echo ""
+echo "Telechargement de BgUtils..."
+
+curl -L 
+--fail 
+--retry 3 
+-o bgutil.tar.gz 
+"${BGUTIL_URL}"
+
+echo ""
+echo "Extraction de BgUtils..."
+
+tar -xzf bgutil.tar.gz
+
+rm -f bgutil.tar.gz
+
+if [ ! -d "bgutil-ytdlp-pot-provider-${BGUTIL_VERSION}" ]; then
+echo "ERREUR : dossier BgUtils introuvable apres extraction."
+exit 1
+fi
+
+mv 
+"bgutil-ytdlp-pot-provider-${BGUTIL_VERSION}" 
 bgutil-ytdlp-pot-provider
 
 echo ""
-echo "BgUtils telecharge."
-
-cd bgutil-ytdlp-pot-provider
+echo "BgUtils telecharge avec succes."
 
 echo ""
 echo "Installation du serveur BgUtils..."
 
-cd server
+cd bgutil-ytdlp-pot-provider/server
 
 npm ci
 
@@ -63,25 +82,39 @@ bgutil-ytdlp-pot-provider/plugin/.
 "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
 
 echo ""
-echo "========================================"
-echo "Installation terminee"
-echo "========================================"
+echo "Verification du plugin..."
 
-echo ""
-echo "yt-dlp :"
-python3 -m yt_dlp --version
-
-echo ""
-echo "Plugin BgUtils :"
 ls -la 
 "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider"
 
 echo ""
-echo "Serveur BgUtils :"
+echo "Verification du serveur BgUtils..."
+
 ls -la 
 bgutil-ytdlp-pot-provider/server/build
 
 echo ""
 echo "========================================"
-echo "OK : yt-dlp + BgUtils installes"
+echo "Installation terminee avec succes"
+echo "========================================"
+
+echo ""
+echo "Version yt-dlp :"
+python3 -m yt_dlp --version
+
+echo ""
+echo "BgUtils :"
+echo "Version ${BGUTIL_VERSION}"
+
+echo ""
+echo "Plugin :"
+echo "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
+
+echo ""
+echo "Serveur :"
+echo "bgutil-ytdlp-pot-provider/server/build/"
+
+echo ""
+echo "========================================"
+echo "OK"
 echo "========================================"
