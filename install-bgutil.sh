@@ -1,16 +1,19 @@
-
 #!/bin/sh
 set -e
 
-echo "📦 Installation de BgUtils PO Token Provider..."
+BGUTIL_VERSION="1.3.1"
+
+echo "📦 Installation de BgUtils PO Token Provider v${BGUTIL_VERSION}..."
 
 rm -rf bgutil-ytdlp-pot-provider
 
-git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git bgutil-ytdlp-pot-provider
+git clone --depth 1 --branch "${BGUTIL_VERSION}" \
+  https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git \
+  bgutil-ytdlp-pot-provider
 
 cd bgutil-ytdlp-pot-provider/server
 
 npm ci
 npx tsc
 
-echo "✅ BgUtils installé et compilé."
+echo "✅ BgUtils v${BGUTIL_VERSION} compilé."
