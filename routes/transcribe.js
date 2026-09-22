@@ -19,7 +19,7 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 fs.ensureDirSync(UPLOADS_DIR);
 
 const upload = multer({
-  dest: UPLOADS_DIR,
+  dest: UPLOADS_DIR
 });
 
 // ============================================================
@@ -32,30 +32,23 @@ const PLATFORM_HOSTS = [
   'm.youtube.com',
   'tiktok.com',
   'vm.tiktok.com',
-  'vt.tiktok.com',
+  'vt.tiktok.com'
 ];
 
 function isPlatformUrl(url) {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
 
-    return PLATFORM_HOSTS.some(
-      (h) => host === h || host.endsWith('.' + h)
-    );
-  } catch {
+    return PLATFORM_HOSTS.some(function (h) {
+      return host === h || host.endsWith('.' + h);
+    });
+  } catch (err) {
     return false;
   }
 }
 
 // ============================================================
 // COOKIES YOUTUBE
-// ============================================================
-//
-// YOUTUBE_COOKIES_BASE64 contient le contenu de cookies.txt
-// exporté depuis Firefox.
-//
-// Le fichier est recréé dans /tmp au démarrage du premier
-// téléchargement YouTube.
 // ============================================================
 
 let cachedCookiesPath = null;
@@ -80,7 +73,10 @@ function getCookiesFilePath() {
       'base64'
     ).toString('utf8');
 
-    fs.writeFileSync(filePath, content);
+    fs.writeFileSync(
+      filePath,
+      content
+    );
 
     cachedCookiesPath = filePath;
 
@@ -102,20 +98,13 @@ function getCookiesFilePath() {
 // ============================================================
 // BGUTIL PO TOKEN PROVIDER
 // ============================================================
-//
-// server.js démarre BgUtils sur :
-// http://127.0.0.1:4416
-//
-// BGUTIL_BASE_URL peut être modifié dans Railway si nécessaire.
-// ============================================================
 
 const BGUTIL_BASE_URL =
   process.env.BGUTIL_BASE_URL ||
   'http://127.0.0.1:4416';
 
 console.log(
-  '🔐 BgUtils URL:',
-  BGUTIL_BASE_URL
+  '🔐 BgUtils URL: ' + BGUTIL_BASE_URL
 );
 
 // ============================================================
@@ -124,8 +113,7 @@ console.log(
 
 async function downloadWithYtDlp(url, destPath) {
   console.log(
-    '▶️ Téléchargement avec yt-dlp:',
-    url
+    '▶️ Téléchargement avec yt-dlp: ' + url
   );
 
   const options = {
@@ -135,14 +123,11 @@ async function downloadWithYtDlp(url, destPath) {
 
     noPlaylist: true,
 
-    // --------------------------------------------------------
-    // YouTube + BgUtils PO Token
-    // --------------------------------------------------------
-    //
-    // On conserve le client Android utilisé précédemment.
-    //
-    // BgUtils fournit le PO Token via son serveur HTTP local.
-    // --------------------------------------------------------
+    /*
+     * YouTube :
+     * - client Android
+     * - PO Token fourni par BgUtils
+     */
 
     extractorArgs:
       'youtube:player_client=android;' +
@@ -151,12 +136,12 @@ async function downloadWithYtDlp(url, destPath) {
 
     noCheckCertificates: true,
 
-    noWarnings: true,
+    noWarnings: true
   };
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // COOKIES YOUTUBE
-  // ----------------------------------------------------------
+  // ==========================================================
 
   const cookiesPath = getCookiesFilePath();
 
@@ -172,37 +157,35 @@ async function downloadWithYtDlp(url, destPath) {
     );
   }
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // EXÉCUTION YT-DLP
-  // ----------------------------------------------------------
+  // ==========================================================
 
   try {
-    await ytDlp(url, options);
+    await ytDlp(
+      url,
+      options
+    );
   } catch (err) {
     console.error(
       '❌ yt-dlp erreur:',
-      err.stderr ||
-      err.message
+      err.stderr || err.message
     );
 
     throw err;
   }
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // VÉRIFICATION DU FICHIER
-  // ----------------------------------------------------------
+  // ==========================================================
 
   if (await fs.pathExists(destPath)) {
     console.log(
-      '✅ Vidéo téléchargée:',
-      destPath
+      '✅ Vidéo téléchargée: ' + destPath
     );
 
     return destPath;
   }
-
-  // Certains téléchargements peuvent produire un nom
-  // légèrement différent de celui demandé.
 
   const dir = path.dirname(destPath);
 
@@ -213,9 +196,9 @@ async function downloadWithYtDlp(url, destPath) {
 
   const files = await fs.readdir(dir);
 
-  const match = files.find(
-    (file) => file.startsWith(base)
-  );
+  const match = files.find(function (file) {
+    return file.startsWith(base);
+  });
 
   if (match) {
     const finalPath = path.join(
@@ -224,8 +207,7 @@ async function downloadWithYtDlp(url, destPath) {
     );
 
     console.log(
-      '✅ Vidéo trouvée:',
-      finalPath
+      '✅ Vidéo trouvée: ' + finalPath
     );
 
     return finalPath;
@@ -242,14 +224,13 @@ async function downloadWithYtDlp(url, destPath) {
 
 async function downloadDirect(url, destPath) {
   console.log(
-    '⬇️ Téléchargement direct:',
-    url
+    '⬇️ Téléchargement direct: ' + url
   );
 
   const response = await axios.get(
     url,
     {
-      responseType: 'stream',
+      responseType: 'stream'
     }
   );
 
@@ -259,31 +240,29 @@ async function downloadDirect(url, destPath) {
 
   response.data.pipe(writer);
 
-  return new Promise(
-    (resolve, reject) => {
-      writer.on(
-        'finish',
-        () => {
-          console.log(
-            '✅ Téléchargement direct terminé:',
-            destPath
-          );
+  return new Promise(function (resolve, reject) {
+    writer.on(
+      'finish',
+      function () {
+        console.log(
+          '✅ Téléchargement direct terminé: ' +
+          destPath
+        );
 
-          resolve(destPath);
-        }
-      );
+        resolve(destPath);
+      }
+    );
 
-      writer.on(
-        'error',
-        reject
-      );
+    writer.on(
+      'error',
+      reject
+    );
 
-      response.data.on(
-        'error',
-        reject
-      );
-    }
-  );
+    response.data.on(
+      'error',
+      reject
+    );
+  });
 }
 
 // ============================================================
@@ -312,50 +291,45 @@ function extractAudio(
   videoPath,
   audioPath
 ) {
-  return new Promise(
-    (resolve, reject) => {
-      console.log(
-        '🎵 Extraction audio:',
-        videoPath
-      );
+  return new Promise(function (resolve, reject) {
+    console.log(
+      '🎵 Extraction audio: ' + videoPath
+    );
 
-      ffmpeg(videoPath)
-        .noVideo()
-        .audioCodec('libmp3lame')
-        .format('mp3')
-        .on(
-          'end',
-          () => {
-            console.log(
-              '✅ Extraction audio terminée.'
-            );
+    ffmpeg(videoPath)
+      .noVideo()
+      .audioCodec('libmp3lame')
+      .format('mp3')
+      .on(
+        'end',
+        function () {
+          console.log(
+            '✅ Extraction audio terminée.'
+          );
 
-            resolve();
-          }
-        )
-        .on(
-          'error',
-          (err) => {
-            console.error(
-              '❌ Erreur FFmpeg:',
-              err.message
-            );
+          resolve();
+        }
+      )
+      .on(
+        'error',
+        function (err) {
+          console.error(
+            '❌ Erreur FFmpeg:',
+            err.message
+          );
 
-            reject(err);
-          }
-        )
-        .save(audioPath);
-    }
-  );
+          reject(err);
+        }
+      )
+      .save(audioPath);
+  });
 }
 
 // ============================================================
 // TRANSCRIPTION OPENAI WHISPER
 // ============================================================
 
-async function transcribeAudio(
-  audioPath
-) {
+async function transcribeAudio(audioPath) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error(
       'OPENAI_API_KEY manquant dans .env'
@@ -386,10 +360,11 @@ async function transcribeAudio(
         ...form.getHeaders(),
 
         Authorization:
-          `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Bearer ' +
+          process.env.OPENAI_API_KEY
       },
 
-      maxBodyLength: Infinity,
+      maxBodyLength: Infinity
     }
   );
 
@@ -407,15 +382,15 @@ async function transcribeAudio(
 router.post(
   '/transcribe',
   upload.single('video'),
-  async (req, res) => {
+  async function (req, res) {
     const tmpFiles = [];
 
     try {
       let videoPath;
 
-      // ------------------------------------------------------
-      // CAS 1 : fichier vidéo envoyé
-      // ------------------------------------------------------
+      // ======================================================
+      // 1. FICHIER VIDÉO UPLOADÉ
+      // ======================================================
 
       if (req.file) {
         videoPath = req.file.path;
@@ -425,19 +400,20 @@ router.post(
         );
 
         console.log(
-          '📁 Vidéo reçue:',
-          videoPath
+          '📁 Vidéo reçue: ' + videoPath
         );
       }
 
-      // ------------------------------------------------------
-      // CAS 2 : URL vidéo
-      // ------------------------------------------------------
+      // ======================================================
+      // 2. URL VIDÉO
+      // ======================================================
 
       else if (req.body.videoUrl) {
         const target = path.join(
           UPLOADS_DIR,
-          `src_${Date.now()}.mp4`
+          'src_' +
+          Date.now() +
+          '.mp4'
         );
 
         videoPath = await downloadVideo(
@@ -450,24 +426,26 @@ router.post(
         );
       }
 
-      // ------------------------------------------------------
-      // CAS 3 : aucune vidéo
-      // ------------------------------------------------------
+      // ======================================================
+      // 3. AUCUNE VIDÉO
+      // ======================================================
 
       else {
         return res.status(400).json({
           error:
-            'Fournissez "video" (upload) ou "videoUrl".',
+            'Fournissez "video" (upload) ou "videoUrl".'
         });
       }
 
-      // ------------------------------------------------------
+      // ======================================================
       // EXTRACTION AUDIO
-      // ------------------------------------------------------
+      // ======================================================
 
       const audioPath = path.join(
         UPLOADS_DIR,
-        `audio_${Date.now()}.mp3`
+        'audio_' +
+        Date.now() +
+        '.mp3'
       );
 
       tmpFiles.push(
@@ -479,50 +457,55 @@ router.post(
         audioPath
       );
 
-      // ------------------------------------------------------
+      // ======================================================
       // TRANSCRIPTION
-      // ------------------------------------------------------
+      // ======================================================
 
       const transcript =
         await transcribeAudio(
           audioPath
         );
 
-      // ------------------------------------------------------
+      // ======================================================
       // RÉPONSE
-      // ------------------------------------------------------
+      // ======================================================
 
       return res.json({
-        transcript,
-        sourceVideoPath:
-          videoPath,
+        transcript: transcript,
+        sourceVideoPath: videoPath
       });
 
     } catch (err) {
       console.error(
         '❌ Erreur transcription:',
-        err.response?.data ||
-        err.stderr ||
-        err.message
+        err.response &&
+        err.response.data
+          ? err.response.data
+          : err.stderr ||
+            err.message
       );
 
       return res.status(500).json({
         error:
-          err.response?.data?.error?.message ||
-          err.stderr ||
-          err.message,
+          err.response &&
+          err.response.data &&
+          err.response.data.error &&
+          err.response.data.error.message
+            ? err.response.data.error.message
+            : err.stderr ||
+              err.message
       });
 
     } finally {
-      // ------------------------------------------------------
-      // NETTOYAGE DES FICHIERS TEMPORAIRES
-      // ------------------------------------------------------
+      // ======================================================
+      // NETTOYAGE
+      // ======================================================
 
       for (const file of tmpFiles) {
         try {
           await fs.remove(file);
-        } catch {
-          // Rien à faire si le fichier est déjà supprimé.
+        } catch (err) {
+          // Fichier déjà supprimé ou inaccessible.
         }
       }
     }
@@ -531,9 +514,6 @@ router.post(
 
 // ============================================================
 // EXPORTS
-// ============================================================
-//
-// video.js utilise également ces fonctions.
 // ============================================================
 
 module.exports = router;
