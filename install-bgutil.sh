@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-BGUTIL_VERSION="1.3.1"
+BGUTIL_VERSION="2.0.0"
 
 echo "📦 Installation de BgUtils PO Token Provider v${BGUTIL_VERSION}..."
 
