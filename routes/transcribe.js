@@ -1,4 +1,3 @@
-
 const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
@@ -19,464 +18,518 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 fs.ensureDirSync(UPLOADS_DIR);
 
 const upload = multer({
-  dest: UPLOADS_DIR
+dest: UPLOADS_DIR
 });
 
 const PLATFORM_HOSTS = [
-  'youtube.com',
-  'youtu.be',
-  'm.youtube.com',
-  'tiktok.com',
-  'vm.tiktok.com',
-  'vt.tiktok.com'
+'youtube.com',
+'youtu.be',
+'m.youtube.com',
+'tiktok.com',
+'vm.tiktok.com',
+'vt.tiktok.com'
 ];
 
 function isPlatformUrl(url) {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, '');
+try {
+const host = new URL(url).hostname.replace(/^[www./](http://www./), '');
 
-    return PLATFORM_HOSTS.some(function (h) {
-      return host === h || host.endsWith('.' + h);
-    });
-  } catch (err) {
-    return false;
-  }
+```
+return PLATFORM_HOSTS.some(function (h) {
+  return host === h || host.endsWith('.' + h);
+});
+```
+
+} catch (err) {
+return false;
 }
-
-// ============================================================
-// COOKIES YOUTUBE
-// ============================================================
+}
 
 let cachedCookiesPath = null;
 
 function getCookiesFilePath() {
-  if (!process.env.YOUTUBE_COOKIES_BASE64) {
-    return null;
-  }
-
-  if (cachedCookiesPath) {
-    return cachedCookiesPath;
-  }
-
-  const filePath = path.join(
-    os.tmpdir(),
-    'yt-cookies.txt'
-  );
-
-  try {
-    const content = Buffer.from(
-      process.env.YOUTUBE_COOKIES_BASE64,
-      'base64'
-    ).toString('utf8');
-
-    fs.writeFileSync(
-      filePath,
-      content
-    );
-
-    cachedCookiesPath = filePath;
-
-    console.log(
-      '🍪 Fichier cookies YouTube préparé.'
-    );
-
-    return filePath;
-  } catch (err) {
-    console.error(
-      '❌ Impossible de créer yt-cookies.txt:',
-      err.message
-    );
-
-    return null;
-  }
-}
-
-// ============================================================
-// BGUTIL PO TOKEN
-// ============================================================
-
-const BGUTIL_BASE_URL =
-  process.env.BGUTIL_BASE_URL ||
-  'http://127.0.0.1:4416';
-
+if (!process.env.YOUTUBE_COOKIES_BASE64) {
 console.log(
-  '🔐 BgUtils URL: ' + BGUTIL_BASE_URL
+'ℹ️ YOUTUBE_COOKIES_BASE64 non configuré.'
 );
 
-// ============================================================
-// YT-DLP
-// ============================================================
+```
+return null;
+```
+
+}
+
+if (cachedCookiesPath) {
+return cachedCookiesPath;
+}
+
+const filePath = path.join(
+os.tmpdir(),
+'yt-cookies.txt'
+);
+
+try {
+const content = Buffer.from(
+process.env.YOUTUBE_COOKIES_BASE64,
+'base64'
+).toString('utf8');
+
+```
+fs.writeFileSync(
+  filePath,
+  content
+);
+
+cachedCookiesPath = filePath;
+
+console.log(
+  '🍪 Fichier cookies YouTube préparé.'
+);
+
+return filePath;
+```
+
+} catch (err) {
+
+```
+console.error(
+  '❌ Impossible de créer yt-cookies.txt:',
+  err.message
+);
+
+return null;
+```
+
+}
+}
+
+const BGUTIL_BASE_URL =
+process.env.BGUTIL_BASE_URL ||
+'http://127.0.0.1:4416';
+
+console.log(
+'🔐 BgUtils URL: ' + BGUTIL_BASE_URL
+);
 
 async function downloadWithYtDlp(url, destPath) {
-  console.log(
-    '▶️ Téléchargement avec yt-dlp: ' + url
-  );
 
-  const options = {
-    output: destPath,
+console.log(
+'▶️ Téléchargement avec yt-dlp: ' + url
+);
 
-    format: 'bv*+ba/b',
+const options = {
 
-    noPlaylist: true,
+```
+output: destPath,
 
-    extractorArgs:
-      'youtube:player_client=android;' +
-      'youtubepot-bgutilhttp:base_url=' +
-      BGUTIL_BASE_URL,
+format: 'bv*+ba/b',
 
-    noCheckCertificates: true,
+noPlaylist: true,
 
-    noWarnings: true
-  };
+extractorArgs:
+  'youtube:player_client=mweb;' +
+  'youtubepot-bgutilhttp:base_url=' +
+  BGUTIL_BASE_URL,
 
-  const cookiesPath = getCookiesFilePath();
+noCheckCertificates: true,
 
-  if (cookiesPath) {
-    options.cookies = cookiesPath;
+noWarnings: true
+```
 
-    console.log(
-      '🍪 Cookies YouTube activés.'
-    );
-  } else {
-    console.log(
-      'ℹ️ YOUTUBE_COOKIES_BASE64 non configuré.'
-    );
-  }
+};
 
-  try {
-    await ytDlp(
-      url,
-      options
-    );
-  } catch (err) {
-    console.error(
-      '❌ yt-dlp erreur:',
-      err.stderr || err.message
-    );
+const cookiesPath = getCookiesFilePath();
 
-    throw err;
-  }
+if (cookiesPath) {
 
-  if (await fs.pathExists(destPath)) {
-    console.log(
-      '✅ Vidéo téléchargée: ' + destPath
-    );
+```
+options.cookies = cookiesPath;
 
-    return destPath;
-  }
+console.log(
+  '🍪 Cookies YouTube activés.'
+);
+```
 
-  const dir = path.dirname(destPath);
-
-  const base = path.basename(
-    destPath,
-    path.extname(destPath)
-  );
-
-  const files = await fs.readdir(dir);
-
-  const match = files.find(function (file) {
-    return file.startsWith(base);
-  });
-
-  if (match) {
-    const finalPath = path.join(
-      dir,
-      match
-    );
-
-    console.log(
-      '✅ Vidéo trouvée: ' + finalPath
-    );
-
-    return finalPath;
-  }
-
-  throw new Error(
-    'yt-dlp: fichier vidéo introuvable après téléchargement.'
-  );
 }
 
-// ============================================================
-// TÉLÉCHARGEMENT DIRECT
-// ============================================================
+try {
+
+```
+await ytDlp(
+  url,
+  options
+);
+```
+
+} catch (err) {
+
+```
+console.error(
+  '❌ yt-dlp erreur:',
+  err.stderr || err.message
+);
+
+throw err;
+```
+
+}
+
+if (await fs.pathExists(destPath)) {
+
+```
+console.log(
+  '✅ Vidéo téléchargée: ' + destPath
+);
+
+return destPath;
+```
+
+}
+
+const dir = path.dirname(destPath);
+
+const base = path.basename(
+destPath,
+path.extname(destPath)
+);
+
+const files = await fs.readdir(dir);
+
+const match = files.find(function (file) {
+return file.startsWith(base);
+});
+
+if (match) {
+
+```
+const finalPath = path.join(
+  dir,
+  match
+);
+
+console.log(
+  '✅ Vidéo trouvée: ' + finalPath
+);
+
+return finalPath;
+```
+
+}
+
+throw new Error(
+'yt-dlp: fichier vidéo introuvable après téléchargement.'
+);
+}
 
 async function downloadDirect(url, destPath) {
-  console.log(
-    '⬇️ Téléchargement direct: ' + url
-  );
 
-  const response = await axios.get(
-    url,
-    {
-      responseType: 'stream'
-    }
-  );
+console.log(
+'⬇️ Téléchargement direct: ' + url
+);
 
-  const writer = fs.createWriteStream(
-    destPath
-  );
-
-  response.data.pipe(writer);
-
-  return new Promise(function (resolve, reject) {
-    writer.on(
-      'finish',
-      function () {
-        console.log(
-          '✅ Téléchargement direct terminé: ' +
-          destPath
-        );
-
-        resolve(destPath);
-      }
-    );
-
-    writer.on(
-      'error',
-      reject
-    );
-
-    response.data.on(
-      'error',
-      reject
-    );
-  });
+const response = await axios.get(
+url,
+{
+responseType: 'stream'
 }
+);
 
-// ============================================================
-// TÉLÉCHARGEMENT VIDÉO
-// ============================================================
+const writer = fs.createWriteStream(
+destPath
+);
 
-async function downloadVideo(url, destPath) {
-  if (isPlatformUrl(url)) {
-    return downloadWithYtDlp(
-      url,
+response.data.pipe(writer);
+
+return new Promise(function (resolve, reject) {
+
+```
+writer.on(
+  'finish',
+  function () {
+
+    console.log(
+      '✅ Téléchargement direct terminé: ' +
       destPath
     );
-  }
 
-  return downloadDirect(
-    url,
-    destPath
-  );
+    resolve(destPath);
+  }
+);
+
+writer.on(
+  'error',
+  reject
+);
+
+response.data.on(
+  'error',
+  reject
+);
+```
+
+});
 }
 
-// ============================================================
-// EXTRACTION AUDIO
-// ============================================================
+async function downloadVideo(url, destPath) {
+
+if (isPlatformUrl(url)) {
+
+```
+return downloadWithYtDlp(
+  url,
+  destPath
+);
+```
+
+}
+
+return downloadDirect(
+url,
+destPath
+);
+}
 
 function extractAudio(
-  videoPath,
-  audioPath
+videoPath,
+audioPath
 ) {
-  return new Promise(function (resolve, reject) {
-    console.log(
-      '🎵 Extraction audio: ' + videoPath
-    );
 
-    ffmpeg(videoPath)
-      .noVideo()
-      .audioCodec('libmp3lame')
-      .format('mp3')
-      .on(
-        'end',
-        function () {
-          console.log(
-            '✅ Extraction audio terminée.'
-          );
+return new Promise(function (resolve, reject) {
 
-          resolve();
-        }
-      )
-      .on(
-        'error',
-        function (err) {
-          console.error(
-            '❌ Erreur FFmpeg:',
-            err.message
-          );
+```
+console.log(
+  '🎵 Extraction audio: ' + videoPath
+);
 
-          reject(err);
-        }
-      )
-      .save(audioPath);
-  });
+ffmpeg(videoPath)
+
+  .noVideo()
+
+  .audioCodec('libmp3lame')
+
+  .format('mp3')
+
+  .on(
+    'end',
+    function () {
+
+      console.log(
+        '✅ Extraction audio terminée.'
+      );
+
+      resolve();
+    }
+  )
+
+  .on(
+    'error',
+    function (err) {
+
+      console.error(
+        '❌ Erreur FFmpeg:',
+        err.message
+      );
+
+      reject(err);
+    }
+  )
+
+  .save(audioPath);
+```
+
+});
 }
-
-// ============================================================
-// TRANSCRIPTION OPENAI
-// ============================================================
 
 async function transcribeAudio(audioPath) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error(
-      'OPENAI_API_KEY manquant dans .env'
-    );
-  }
 
-  console.log(
-    '📝 Transcription OpenAI Whisper...'
-  );
+if (!process.env.OPENAI_API_KEY) {
 
-  const form = new FormData();
+```
+throw new Error(
+  'OPENAI_API_KEY manquant dans .env'
+);
+```
 
-  form.append(
-    'file',
-    fs.createReadStream(audioPath)
-  );
-
-  form.append(
-    'model',
-    'whisper-1'
-  );
-
-  const headers = {
-    ...form.getHeaders(),
-
-    Authorization:
-      'Bearer ' +
-      process.env.OPENAI_API_KEY
-  };
-
-  const response = await axios.post(
-    'https://api.openai.com/v1/audio/transcriptions',
-    form,
-    {
-      headers: headers,
-      maxBodyLength: Infinity
-    }
-  );
-
-  console.log(
-    '✅ Transcription terminée.'
-  );
-
-  return response.data.text;
 }
 
-// ============================================================
-// POST /api/transcribe
-// ============================================================
+console.log(
+'📝 Transcription OpenAI Whisper...'
+);
+
+const form = new FormData();
+
+form.append(
+'file',
+fs.createReadStream(audioPath)
+);
+
+form.append(
+'model',
+'whisper-1'
+);
+
+const headers = {
+...form.getHeaders(),
+
+```
+Authorization:
+  'Bearer ' +
+  process.env.OPENAI_API_KEY
+```
+
+};
+
+const response = await axios.post(
+'https://api.openai.com/v1/audio/transcriptions',
+form,
+{
+headers: headers,
+maxBodyLength: Infinity
+}
+);
+
+console.log(
+'✅ Transcription terminée.'
+);
+
+return response.data.text;
+}
 
 router.post(
-  '/transcribe',
-  upload.single('video'),
-  async function (req, res) {
-    const tmpFiles = [];
+'/transcribe',
+upload.single('video'),
+
+async function (req, res) {
+
+```
+const tmpFiles = [];
+
+try {
+
+  let videoPath;
+
+  if (req.file) {
+
+    videoPath = req.file.path;
+
+    tmpFiles.push(
+      videoPath
+    );
+
+    console.log(
+      '📁 Vidéo reçue: ' + videoPath
+    );
+
+  } else if (req.body.videoUrl) {
+
+    const target = path.join(
+      UPLOADS_DIR,
+      'src_' +
+      Date.now() +
+      '.mp4'
+    );
+
+    videoPath = await downloadVideo(
+      req.body.videoUrl,
+      target
+    );
+
+    tmpFiles.push(
+      videoPath
+    );
+
+  } else {
+
+    return res.status(400).json({
+
+      error:
+        'Fournissez "video" (upload) ou "videoUrl".'
+
+    });
+  }
+
+  const audioPath = path.join(
+    UPLOADS_DIR,
+    'audio_' +
+    Date.now() +
+    '.mp3'
+  );
+
+  tmpFiles.push(
+    audioPath
+  );
+
+  await extractAudio(
+    videoPath,
+    audioPath
+  );
+
+  const transcript =
+    await transcribeAudio(
+      audioPath
+    );
+
+  return res.json({
+
+    transcript: transcript,
+
+    sourceVideoPath: videoPath
+
+  });
+
+} catch (err) {
+
+  console.error(
+    '❌ Erreur transcription:',
+    err.response &&
+    err.response.data
+      ? err.response.data
+      : err.stderr ||
+        err.message
+  );
+
+  return res.status(500).json({
+
+    error:
+      err.response &&
+      err.response.data &&
+      err.response.data.error &&
+      err.response.data.error.message
+
+        ? err.response.data.error.message
+
+        : err.stderr ||
+          err.message
+
+  });
+
+} finally {
+
+  for (const file of tmpFiles) {
 
     try {
-      let videoPath;
 
-      if (req.file) {
-        videoPath = req.file.path;
-
-        tmpFiles.push(
-          videoPath
-        );
-
-        console.log(
-          '📁 Vidéo reçue: ' + videoPath
-        );
-
-      } else if (req.body.videoUrl) {
-
-        const target = path.join(
-          UPLOADS_DIR,
-          'src_' +
-          Date.now() +
-          '.mp4'
-        );
-
-        videoPath = await downloadVideo(
-          req.body.videoUrl,
-          target
-        );
-
-        tmpFiles.push(
-          videoPath
-        );
-
-      } else {
-
-        return res.status(400).json({
-          error:
-            'Fournissez "video" (upload) ou "videoUrl".'
-        });
-      }
-
-      const audioPath = path.join(
-        UPLOADS_DIR,
-        'audio_' +
-        Date.now() +
-        '.mp3'
-      );
-
-      tmpFiles.push(
-        audioPath
-      );
-
-      await extractAudio(
-        videoPath,
-        audioPath
-      );
-
-      const transcript =
-        await transcribeAudio(
-          audioPath
-        );
-
-      return res.json({
-        transcript: transcript,
-        sourceVideoPath: videoPath
-      });
+      await fs.remove(file);
 
     } catch (err) {
 
-      console.error(
-        '❌ Erreur transcription:',
-        err.response &&
-        err.response.data
-          ? err.response.data
-          : err.stderr ||
-            err.message
-      );
+      // Ignore les erreurs de nettoyage.
 
-      return res.status(500).json({
-        error:
-          err.response &&
-          err.response.data &&
-          err.response.data.error &&
-          err.response.data.error.message
-            ? err.response.data.error.message
-            : err.stderr ||
-              err.message
-      });
-
-    } finally {
-
-      for (const file of tmpFiles) {
-        try {
-          await fs.remove(file);
-        } catch (err) {
-          // Ignore les erreurs de nettoyage.
-        }
-      }
     }
   }
-);
+}
+```
 
-// ============================================================
-// EXPORTS
-// ============================================================
+}
+);
 
 module.exports = router;
 
 module.exports.downloadVideo =
-  downloadVideo;
+downloadVideo;
 
 module.exports.extractAudio =
-  extractAudio;
+extractAudio;
 
 module.exports.transcribeAudio =
-  transcribeAudio;
-
+transcribeAudio;
