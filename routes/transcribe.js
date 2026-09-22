@@ -32,12 +32,20 @@ const PLATFORM_HOSTS = [
 
 function isPlatformUrl(url) {
 try {
-const host = new URL(url).hostname.replace(/^[www./](http://www./), '');
+const parsedUrl = new URL(url);
+const host = parsedUrl.hostname;
 
 ```
-return PLATFORM_HOSTS.some(function (h) {
-  return host === h || host.endsWith('.' + h);
-});
+for (const platformHost of PLATFORM_HOSTS) {
+  if (
+    host === platformHost ||
+    host.endsWith('.' + platformHost)
+  ) {
+    return true;
+  }
+}
+
+return false;
 ```
 
 } catch (err) {
@@ -48,12 +56,14 @@ return false;
 let cachedCookiesPath = null;
 
 function getCookiesFilePath() {
+
 if (!process.env.YOUTUBE_COOKIES_BASE64) {
-console.log(
-'ℹ️ YOUTUBE_COOKIES_BASE64 non configuré.'
-);
 
 ```
+console.log(
+  'ℹ️ YOUTUBE_COOKIES_BASE64 non configuré.'
+);
+
 return null;
 ```
 
@@ -69,12 +79,13 @@ os.tmpdir(),
 );
 
 try {
-const content = Buffer.from(
-process.env.YOUTUBE_COOKIES_BASE64,
-'base64'
-).toString('utf8');
 
 ```
+const content = Buffer.from(
+  process.env.YOUTUBE_COOKIES_BASE64,
+  'base64'
+).toString('utf8');
+
 fs.writeFileSync(
   filePath,
   content
@@ -512,8 +523,6 @@ try {
       await fs.remove(file);
 
     } catch (err) {
-
-      // Ignore les erreurs de nettoyage.
 
     }
   }
