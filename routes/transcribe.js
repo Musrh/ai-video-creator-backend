@@ -32,15 +32,16 @@ const PLATFORM_HOSTS = [
 
 function isPlatformUrl(url) {
 try {
-const parsedUrl = new URL(url);
-const host = parsedUrl.hostname;
+const parsed = new URL(url);
+const host = parsed.hostname.toLowerCase();
 
 ```
-for (const platformHost of PLATFORM_HOSTS) {
-  if (
-    host === platformHost ||
-    host.endsWith('.' + platformHost)
-  ) {
+for (const platform of PLATFORM_HOSTS) {
+  if (host === platform) {
+    return true;
+  }
+
+  if (host.endsWith('.' + platform)) {
     return true;
   }
 }
@@ -48,7 +49,7 @@ for (const platformHost of PLATFORM_HOSTS) {
 return false;
 ```
 
-} catch (err) {
+} catch (error) {
 return false;
 }
 }
@@ -58,15 +59,8 @@ let cachedCookiesPath = null;
 function getCookiesFilePath() {
 
 if (!process.env.YOUTUBE_COOKIES_BASE64) {
-
-```
-console.log(
-  'ℹ️ YOUTUBE_COOKIES_BASE64 non configuré.'
-);
-
+console.log('YOUTUBE_COOKIES_BASE64 non configure.');
 return null;
-```
-
 }
 
 if (cachedCookiesPath) {
@@ -94,18 +88,18 @@ fs.writeFileSync(
 cachedCookiesPath = filePath;
 
 console.log(
-  '🍪 Fichier cookies YouTube préparé.'
+  'Cookies YouTube prepares.'
 );
 
 return filePath;
 ```
 
-} catch (err) {
+} catch (error) {
 
 ```
 console.error(
-  '❌ Impossible de créer yt-cookies.txt:',
-  err.message
+  'Erreur creation cookies YouTube:',
+  error.message
 );
 
 return null;
@@ -119,20 +113,19 @@ process.env.BGUTIL_BASE_URL ||
 'http://127.0.0.1:4416';
 
 console.log(
-'🔐 BgUtils URL: ' + BGUTIL_BASE_URL
+'BgUtils URL: ' + BGUTIL_BASE_URL
 );
 
 async function downloadWithYtDlp(url, destPath) {
 
 console.log(
-'▶️ Téléchargement avec yt-dlp: ' + url
+'Telechargement avec yt-dlp: ' + url
 );
 
 const options = {
-
-```
 output: destPath,
 
+```
 format: 'bv*+ba/b',
 
 noPlaylist: true,
@@ -157,7 +150,7 @@ if (cookiesPath) {
 options.cookies = cookiesPath;
 
 console.log(
-  '🍪 Cookies YouTube activés.'
+  'Cookies YouTube actives.'
 );
 ```
 
@@ -172,15 +165,15 @@ await ytDlp(
 );
 ```
 
-} catch (err) {
+} catch (error) {
 
 ```
 console.error(
-  '❌ yt-dlp erreur:',
-  err.stderr || err.message
+  'Erreur yt-dlp:',
+  error.stderr || error.message
 );
 
-throw err;
+throw error;
 ```
 
 }
@@ -189,7 +182,7 @@ if (await fs.pathExists(destPath)) {
 
 ```
 console.log(
-  '✅ Vidéo téléchargée: ' + destPath
+  'Video telechargee: ' + destPath
 );
 
 return destPath;
@@ -197,29 +190,33 @@ return destPath;
 
 }
 
-const dir = path.dirname(destPath);
+const directory = path.dirname(destPath);
 
-const base = path.basename(
+const baseName = path.basename(
 destPath,
 path.extname(destPath)
 );
 
-const files = await fs.readdir(dir);
+const files = await fs.readdir(
+directory
+);
 
-const match = files.find(function (file) {
-return file.startsWith(base);
-});
+const match = files.find(
+function (file) {
+return file.startsWith(baseName);
+}
+);
 
 if (match) {
 
 ```
 const finalPath = path.join(
-  dir,
+  directory,
   match
 );
 
 console.log(
-  '✅ Vidéo trouvée: ' + finalPath
+  'Video trouvee: ' + finalPath
 );
 
 return finalPath;
@@ -228,14 +225,14 @@ return finalPath;
 }
 
 throw new Error(
-'yt-dlp: fichier vidéo introuvable après téléchargement.'
+'yt-dlp: fichier video introuvable apres telechargement.'
 );
 }
 
 async function downloadDirect(url, destPath) {
 
 console.log(
-'⬇️ Téléchargement direct: ' + url
+'Telechargement direct: ' + url
 );
 
 const response = await axios.get(
@@ -251,34 +248,36 @@ destPath
 
 response.data.pipe(writer);
 
-return new Promise(function (resolve, reject) {
+return new Promise(
+function (resolve, reject) {
 
 ```
-writer.on(
-  'finish',
-  function () {
+  writer.on(
+    'finish',
+    function () {
 
-    console.log(
-      '✅ Téléchargement direct terminé: ' +
-      destPath
-    );
+      console.log(
+        'Telechargement direct termine: ' +
+        destPath
+      );
 
-    resolve(destPath);
-  }
-);
+      resolve(destPath);
+    }
+  );
 
-writer.on(
-  'error',
-  reject
-);
+  writer.on(
+    'error',
+    reject
+  );
 
-response.data.on(
-  'error',
-  reject
-);
+  response.data.on(
+    'error',
+    reject
+  );
+}
 ```
 
-});
+);
 }
 
 async function downloadVideo(url, destPath) {
@@ -305,50 +304,52 @@ videoPath,
 audioPath
 ) {
 
-return new Promise(function (resolve, reject) {
+return new Promise(
+function (resolve, reject) {
 
 ```
-console.log(
-  '🎵 Extraction audio: ' + videoPath
+  console.log(
+    'Extraction audio: ' + videoPath
+  );
+
+  ffmpeg(videoPath)
+
+    .noVideo()
+
+    .audioCodec('libmp3lame')
+
+    .format('mp3')
+
+    .on(
+      'end',
+      function () {
+
+        console.log(
+          'Extraction audio terminee.'
+        );
+
+        resolve();
+      }
+    )
+
+    .on(
+      'error',
+      function (error) {
+
+        console.error(
+          'Erreur FFmpeg:',
+          error.message
+        );
+
+        reject(error);
+      }
+    )
+
+    .save(audioPath);
+}
+```
+
 );
-
-ffmpeg(videoPath)
-
-  .noVideo()
-
-  .audioCodec('libmp3lame')
-
-  .format('mp3')
-
-  .on(
-    'end',
-    function () {
-
-      console.log(
-        '✅ Extraction audio terminée.'
-      );
-
-      resolve();
-    }
-  )
-
-  .on(
-    'error',
-    function (err) {
-
-      console.error(
-        '❌ Erreur FFmpeg:',
-        err.message
-      );
-
-      reject(err);
-    }
-  )
-
-  .save(audioPath);
-```
-
-});
 }
 
 async function transcribeAudio(audioPath) {
@@ -364,7 +365,7 @@ throw new Error(
 }
 
 console.log(
-'📝 Transcription OpenAI Whisper...'
+'Transcription OpenAI Whisper...'
 );
 
 const form = new FormData();
@@ -400,7 +401,7 @@ maxBodyLength: Infinity
 );
 
 console.log(
-'✅ Transcription terminée.'
+'Transcription terminee.'
 );
 
 return response.data.text;
@@ -408,6 +409,7 @@ return response.data.text;
 
 router.post(
 '/transcribe',
+
 upload.single('video'),
 
 async function (req, res) {
@@ -428,7 +430,7 @@ try {
     );
 
     console.log(
-      '📁 Vidéo reçue: ' + videoPath
+      'Video recue: ' + videoPath
     );
 
   } else if (req.body.videoUrl) {
@@ -452,10 +454,8 @@ try {
   } else {
 
     return res.status(400).json({
-
       error:
-        'Fournissez "video" (upload) ou "videoUrl".'
-
+        'Fournissez video ou videoUrl.'
     });
   }
 
@@ -488,29 +488,30 @@ try {
 
   });
 
-} catch (err) {
+} catch (error) {
 
   console.error(
-    '❌ Erreur transcription:',
-    err.response &&
-    err.response.data
-      ? err.response.data
-      : err.stderr ||
-        err.message
+    'Erreur transcription:',
+
+    error.response &&
+    error.response.data
+      ? error.response.data
+      : error.stderr ||
+        error.message
   );
 
   return res.status(500).json({
 
     error:
-      err.response &&
-      err.response.data &&
-      err.response.data.error &&
-      err.response.data.error.message
+      error.response &&
+      error.response.data &&
+      error.response.data.error &&
+      error.response.data.error.message
 
-        ? err.response.data.error.message
+        ? error.response.data.error.message
 
-        : err.stderr ||
-          err.message
+        : error.stderr ||
+          error.message
 
   });
 
@@ -522,7 +523,7 @@ try {
 
       await fs.remove(file);
 
-    } catch (err) {
+    } catch (error) {
 
     }
   }
