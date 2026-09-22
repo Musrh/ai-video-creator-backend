@@ -23,7 +23,7 @@ const upload = multer({
 });
 
 // ============================================================
-// Plateformes supportées
+// PLATEFORMES SUPPORTÉES
 // ============================================================
 
 const PLATFORM_HOSTS = [
@@ -48,13 +48,14 @@ function isPlatformUrl(url) {
 }
 
 // ============================================================
-// YouTube cookies
+// COOKIES YOUTUBE
 // ============================================================
 //
 // YOUTUBE_COOKIES_BASE64 contient le contenu de cookies.txt
 // exporté depuis Firefox.
 //
-// On conserve exactement ce fonctionnement.
+// Le fichier est recréé dans /tmp au démarrage du premier
+// téléchargement YouTube.
 // ============================================================
 
 let cachedCookiesPath = null;
@@ -99,26 +100,33 @@ function getCookiesFilePath() {
 }
 
 // ============================================================
-// BgUtils PO Token Provider
+// BGUTIL PO TOKEN PROVIDER
 // ============================================================
 //
-// Le serveur BgUtils lancé dans server.js écoute sur :
+// server.js démarre BgUtils sur :
 // http://127.0.0.1:4416
 //
-// On peut modifier cette adresse avec BGUTIL_BASE_URL
-// dans Railway si nécessaire.
+// BGUTIL_BASE_URL peut être modifié dans Railway si nécessaire.
 // ============================================================
 
 const BGUTIL_BASE_URL =
   process.env.BGUTIL_BASE_URL ||
   'http://127.0.0.1:4416';
 
+console.log(
+  '🔐 BgUtils URL:',
+  BGUTIL_BASE_URL
+);
+
 // ============================================================
-// Téléchargement avec yt-dlp
+// TÉLÉCHARGEMENT AVEC YT-DLP
 // ============================================================
 
 async function downloadWithYtDlp(url, destPath) {
-  console.log('▶️ Téléchargement avec yt-dlp :', url);
+  console.log(
+    '▶️ Téléchargement avec yt-dlp:',
+    url
+  );
 
   const options = {
     output: destPath,
@@ -128,30 +136,26 @@ async function downloadWithYtDlp(url, destPath) {
     noPlaylist: true,
 
     // --------------------------------------------------------
-    // YouTube
+    // YouTube + BgUtils PO Token
     // --------------------------------------------------------
     //
     // On conserve le client Android utilisé précédemment.
     //
-    // BgUtils fournit maintenant le PO Token via son serveur
-    // HTTP local.
-    //
-    // Les deux arguments sont envoyés dans le même
-    // extractor-args, séparés par ";".
+    // BgUtils fournit le PO Token via son serveur HTTP local.
     // --------------------------------------------------------
 
     extractorArgs:
-      `youtube:player_client=android;` +
-      `youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+      'youtube:player_client=android;' +
+      'youtubepot-bgutilhttp:base_url=' +
+      BGUTIL_BASE_URL,
 
-    // Évite certains problèmes de certificats côté serveur.
     noCheckCertificates: true,
 
     noWarnings: true,
   };
 
   // ----------------------------------------------------------
-  // Cookies YouTube
+  // COOKIES YOUTUBE
   // ----------------------------------------------------------
 
   const cookiesPath = getCookiesFilePath();
@@ -160,16 +164,16 @@ async function downloadWithYtDlp(url, destPath) {
     options.cookies = cookiesPath;
 
     console.log(
-      '🍪 Cookies YouTube activés pour yt-dlp.'
+      '🍪 Cookies YouTube activés.'
     );
   } else {
     console.log(
-      'ℹ️ Aucun YOUTUBE_COOKIES_BASE64 configuré.'
+      'ℹ️ YOUTUBE_COOKIES_BASE64 non configuré.'
     );
   }
 
   // ----------------------------------------------------------
-  // Téléchargement
+  // EXÉCUTION YT-DLP
   // ----------------------------------------------------------
 
   try {
@@ -177,27 +181,29 @@ async function downloadWithYtDlp(url, destPath) {
   } catch (err) {
     console.error(
       '❌ yt-dlp erreur:',
-      err.stderr || err.message
+      err.stderr ||
+      err.message
     );
 
     throw err;
   }
 
   // ----------------------------------------------------------
-  // Vérification du fichier produit
+  // VÉRIFICATION DU FICHIER
   // ----------------------------------------------------------
 
   if (await fs.pathExists(destPath)) {
     console.log(
-      '✅ Vidéo téléchargée :',
+      '✅ Vidéo téléchargée:',
       destPath
     );
 
     return destPath;
   }
 
-  // Certains formats peuvent produire un nom légèrement
-  // différent de celui demandé.
+  // Certains téléchargements peuvent produire un nom
+  // légèrement différent de celui demandé.
+
   const dir = path.dirname(destPath);
 
   const base = path.basename(
@@ -208,14 +214,17 @@ async function downloadWithYtDlp(url, destPath) {
   const files = await fs.readdir(dir);
 
   const match = files.find(
-    (f) => f.startsWith(base)
+    (file) => file.startsWith(base)
   );
 
   if (match) {
-    const finalPath = path.join(dir, match);
+    const finalPath = path.join(
+      dir,
+      match
+    );
 
     console.log(
-      '✅ Vidéo trouvée :',
+      '✅ Vidéo trouvée:',
       finalPath
     );
 
@@ -228,41 +237,57 @@ async function downloadWithYtDlp(url, destPath) {
 }
 
 // ============================================================
-// Téléchargement direct
+// TÉLÉCHARGEMENT DIRECT
 // ============================================================
 
 async function downloadDirect(url, destPath) {
   console.log(
-    '⬇️ Téléchargement direct :',
+    '⬇️ Téléchargement direct:',
     url
   );
 
-  const response = await axios.get(url, {
-    responseType: 'stream',
-  });
+  const response = await axios.get(
+    url,
+    {
+      responseType: 'stream',
+    }
+  );
 
-  const writer = fs.createWriteStream(destPath);
+  const writer = fs.createWriteStream(
+    destPath
+  );
 
   response.data.pipe(writer);
 
-  return new Promise((resolve, reject) => {
-    writer.on('finish', () => {
-      console.log(
-        '✅ Téléchargement direct terminé :',
-        destPath
+  return new Promise(
+    (resolve, reject) => {
+      writer.on(
+        'finish',
+        () => {
+          console.log(
+            '✅ Téléchargement direct terminé:',
+            destPath
+          );
+
+          resolve(destPath);
+        }
       );
 
-      resolve(destPath);
-    });
+      writer.on(
+        'error',
+        reject
+      );
 
-    writer.on('error', reject);
-
-    response.data.on('error', reject);
-  });
+      response.data.on(
+        'error',
+        reject
+      );
+    }
+  );
 }
 
 // ============================================================
-// Choix du mode de téléchargement
+// CHOIX DU TÉLÉCHARGEMENT
 // ============================================================
 
 async function downloadVideo(url, destPath) {
@@ -280,44 +305,57 @@ async function downloadVideo(url, destPath) {
 }
 
 // ============================================================
-// Extraction audio
+// EXTRACTION AUDIO AVEC FFMPEG
 // ============================================================
 
-function extractAudio(videoPath, audioPath) {
-  return new Promise((resolve, reject) => {
-    console.log(
-      '🎵 Extraction audio :',
-      videoPath
-    );
+function extractAudio(
+  videoPath,
+  audioPath
+) {
+  return new Promise(
+    (resolve, reject) => {
+      console.log(
+        '🎵 Extraction audio:',
+        videoPath
+      );
 
-    ffmpeg(videoPath)
-      .noVideo()
-      .audioCodec('libmp3lame')
-      .format('mp3')
-      .on('end', () => {
-        console.log(
-          '✅ Extraction audio terminée.'
-        );
+      ffmpeg(videoPath)
+        .noVideo()
+        .audioCodec('libmp3lame')
+        .format('mp3')
+        .on(
+          'end',
+          () => {
+            console.log(
+              '✅ Extraction audio terminée.'
+            );
 
-        resolve();
-      })
-      .on('error', (err) => {
-        console.error(
-          '❌ Erreur ffmpeg:',
-          err.message
-        );
+            resolve();
+          }
+        )
+        .on(
+          'error',
+          (err) => {
+            console.error(
+              '❌ Erreur FFmpeg:',
+              err.message
+            );
 
-        reject(err);
-      })
-      .save(audioPath);
-  });
+            reject(err);
+          }
+        )
+        .save(audioPath);
+    }
+  );
 }
 
 // ============================================================
-// Transcription OpenAI Whisper
+// TRANSCRIPTION OPENAI WHISPER
 // ============================================================
 
-async function transcribeAudio(audioPath) {
+async function transcribeAudio(
+  audioPath
+) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error(
       'OPENAI_API_KEY manquant dans .env'
@@ -346,6 +384,7 @@ async function transcribeAudio(audioPath) {
     {
       headers: {
         ...form.getHeaders(),
+
         Authorization:
           `Bearer ${process.env.OPENAI_API_KEY}`,
       },
@@ -375,22 +414,24 @@ router.post(
       let videoPath;
 
       // ------------------------------------------------------
-      // 1. Fichier envoyé directement
+      // CAS 1 : fichier vidéo envoyé
       // ------------------------------------------------------
 
       if (req.file) {
         videoPath = req.file.path;
 
-        tmpFiles.push(videoPath);
+        tmpFiles.push(
+          videoPath
+        );
 
         console.log(
-          '📁 Vidéo reçue par upload :',
+          '📁 Vidéo reçue:',
           videoPath
         );
       }
 
       // ------------------------------------------------------
-      // 2. URL vidéo
+      // CAS 2 : URL vidéo
       // ------------------------------------------------------
 
       else if (req.body.videoUrl) {
@@ -404,11 +445,13 @@ router.post(
           target
         );
 
-        tmpFiles.push(videoPath);
+        tmpFiles.push(
+          videoPath
+        );
       }
 
       // ------------------------------------------------------
-      // 3. Rien fourni
+      // CAS 3 : aucune vidéo
       // ------------------------------------------------------
 
       else {
@@ -419,7 +462,7 @@ router.post(
       }
 
       // ------------------------------------------------------
-      // Extraction audio
+      // EXTRACTION AUDIO
       // ------------------------------------------------------
 
       const audioPath = path.join(
@@ -427,7 +470,9 @@ router.post(
         `audio_${Date.now()}.mp3`
       );
 
-      tmpFiles.push(audioPath);
+      tmpFiles.push(
+        audioPath
+      );
 
       await extractAudio(
         videoPath,
@@ -435,20 +480,24 @@ router.post(
       );
 
       // ------------------------------------------------------
-      // Transcription
+      // TRANSCRIPTION
       // ------------------------------------------------------
 
       const transcript =
-        await transcribeAudio(audioPath);
+        await transcribeAudio(
+          audioPath
+        );
 
       // ------------------------------------------------------
-      // Réponse
+      // RÉPONSE
       // ------------------------------------------------------
 
-      res.json({
+      return res.json({
         transcript,
-        sourceVideoPath: videoPath,
+        sourceVideoPath:
+          videoPath,
       });
+
     } catch (err) {
       console.error(
         '❌ Erreur transcription:',
@@ -457,22 +506,23 @@ router.post(
         err.message
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         error:
           err.response?.data?.error?.message ||
           err.stderr ||
           err.message,
       });
+
     } finally {
       // ------------------------------------------------------
-      // Nettoyage
+      // NETTOYAGE DES FICHIERS TEMPORAIRES
       // ------------------------------------------------------
 
       for (const file of tmpFiles) {
         try {
           await fs.remove(file);
         } catch {
-          // Ignore les erreurs de nettoyage
+          // Rien à faire si le fichier est déjà supprimé.
         }
       }
     }
@@ -480,7 +530,10 @@ router.post(
 );
 
 // ============================================================
-// Exports utilisés par video.js
+// EXPORTS
+// ============================================================
+//
+// video.js utilise également ces fonctions.
 // ============================================================
 
 module.exports = router;
