@@ -115,7 +115,7 @@ async function downloadWithYtDlp(url, destPath) {
   const options = {
     output: destPath,
 
-    format: 'best',
+    format: 'bv*+ba/b',
 
     noPlaylist: true,
 
