@@ -1,4 +1,3 @@
-```sh
 #!/bin/sh
 set -e
 
@@ -11,7 +10,7 @@ echo "Python:"
 python3 --version
 
 echo "Installation de yt-dlp..."
-python3 -m pip install --upgrade yt-dlp
+python3 -m pip install --break-system-packages --upgrade yt-dlp || python3 -m pip install --upgrade yt-dlp
 
 echo "Version yt-dlp:"
 python3 -m yt_dlp --version
@@ -24,16 +23,9 @@ rm -rf "bgutil-ytdlp-pot-provider-${BGUTIL_VERSION}"
 rm -f bgutil.tar.gz
 
 echo "Telechargement de BgUtils..."
-
-curl -L \
-  --fail \
-  --retry 3 \
-  --retry-delay 2 \
-  -o bgutil.tar.gz \
-  "$BGUTIL_URL"
+curl -L --fail --retry 3 --retry-delay 2 -o bgutil.tar.gz "$BGUTIL_URL"
 
 echo "Extraction de BgUtils..."
-
 tar -xzf bgutil.tar.gz
 rm -f bgutil.tar.gz
 
@@ -42,56 +34,36 @@ if [ ! -d "bgutil-ytdlp-pot-provider-${BGUTIL_VERSION}" ]; then
   exit 1
 fi
 
-mv \
-  "bgutil-ytdlp-pot-provider-${BGUTIL_VERSION}" \
-  bgutil-ytdlp-pot-provider
+mv "bgutil-ytdlp-pot-provider-${BGUTIL_VERSION}" bgutil-ytdlp-pot-provider
 
 echo "BgUtils telecharge avec succes."
 
 echo "Installation du serveur BgUtils..."
-
 cd bgutil-ytdlp-pot-provider/server
-
 npm ci
-
 echo "Compilation du serveur BgUtils..."
-
 npx tsc
-
 cd ../..
 
-echo "Installation du plugin yt-dlp..."
-
-mkdir -p \
-  "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider"
-
-cp -r \
-  bgutil-ytdlp-pot-provider/plugin/. \
-  "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
+# ⚠️ Emplacement corrigé : ni $HOME/yt-dlp-plugins, ni un dossier "par défaut" quelconque —
+# un chemin relatif au projet (./yt-dlp-plugins), que transcribe.js pointe explicitement via
+# l'option --plugin-dirs de yt-dlp. $HOME/yt-dlp-plugins n'est PAS un emplacement standard
+# reconnu par yt-dlp (vérifié dans sa documentation officielle des emplacements de plugins),
+# ce qui explique très probablement pourquoi le plugin restait invisible malgré l'installation.
+echo "Installation du plugin yt-dlp (chemin relatif au projet)..."
+mkdir -p "./yt-dlp-plugins/bgutil-ytdlp-pot-provider"
+cp -r bgutil-ytdlp-pot-provider/plugin/. "./yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
 
 echo "Verification du plugin..."
-
-ls -la \
-  "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider"
+ls -la "./yt-dlp-plugins/bgutil-ytdlp-pot-provider"
 
 echo "Verification du serveur BgUtils..."
-
-ls -la \
-  bgutil-ytdlp-pot-provider/server/build
+ls -la bgutil-ytdlp-pot-provider/server/build
 
 echo "Installation terminee avec succes."
-
 echo "Version yt-dlp:"
 python3 -m yt_dlp --version
-
-echo "BgUtils:"
-echo "Version ${BGUTIL_VERSION}"
-
-echo "Plugin:"
-echo "$HOME/yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
-
-echo "Serveur:"
-echo "bgutil-ytdlp-pot-provider/server/build/"
-
+echo "BgUtils: Version ${BGUTIL_VERSION}"
+echo "Plugin: ./yt-dlp-plugins/bgutil-ytdlp-pot-provider/"
+echo "Serveur: bgutil-ytdlp-pot-provider/server/build/"
 echo "OK"
-```
