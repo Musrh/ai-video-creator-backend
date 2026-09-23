@@ -7,13 +7,22 @@ BGUTIL_URL="https://github.com/Brainicism/bgutil-ytdlp-pot-provider/archive/refs
 echo "Installation yt-dlp + BgUtils"
 
 echo "Python:"
-python3 --version
+PYTHON_BIN="$(command -v python3)"
+echo "Binaire python3 resolu: ${PYTHON_BIN}"
+"$PYTHON_BIN" --version
 
 echo "Installation de yt-dlp..."
-python3 -m pip install --break-system-packages --upgrade yt-dlp || python3 -m pip install --upgrade yt-dlp
+"$PYTHON_BIN" -m pip install --break-system-packages --upgrade yt-dlp || "$PYTHON_BIN" -m pip install --upgrade yt-dlp
 
 echo "Version yt-dlp:"
-python3 -m yt_dlp --version
+"$PYTHON_BIN" -m yt_dlp --version
+
+# On enregistre le chemin EXACT du python3 utilisé ici, pour que transcribe.js utilise ce
+# même binaire au runtime plutot que de refaire confiance a "python3" via le PATH — qui
+# peut resoudre vers un interpreteur different (sans yt-dlp installe dessus) selon le
+# contexte d'execution (build vs runtime).
+echo "$PYTHON_BIN" > ./python-bin-path.txt
+echo "Chemin python3 enregistre dans python-bin-path.txt: ${PYTHON_BIN}"
 
 echo "Installation de BgUtils PO Token Provider..."
 echo "Version: ${BGUTIL_VERSION}"

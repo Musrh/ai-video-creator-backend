@@ -16,6 +16,21 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 fs.ensureDirSync(UPLOADS_DIR);
 const upload = multer({ dest: UPLOADS_DIR });
 
+// Emplacement du fichier écrit par install-bgutil.sh, contenant le chemin EXACT du python3
+// utilisé pour installer yt-dlp — on réutilise ce même binaire au runtime, plutôt que de
+// refaire confiance à "python3" via le PATH (qui peut résoudre différemment selon le contexte).
+const PYTHON_BIN_PATH_FILE = path.join(__dirname, '..', 'python-bin-path.txt');
+function getPythonBin() {
+  try {
+    const content = fs.readFileSync(PYTHON_BIN_PATH_FILE, 'utf8').trim();
+    if (content) return content;
+  } catch {
+    // fichier absent (install-bgutil.sh pas encore exécuté, ou ancienne version) : on retombe
+    // sur "python3" générique, au risque du souci d'origine.
+  }
+  return 'python3';
+}
+
 // Dossier où install-bgutil.sh a copié le plugin (chemin relatif au projet, pas $HOME —
 // $HOME n'est pas un emplacement de plugin reconnu par yt-dlp). Passé explicitement à
 // yt-dlp via --plugin-dirs pour ne dépendre d'aucun emplacement "par défaut" deviné.
@@ -93,9 +108,9 @@ function downloadWithYtDlp(url, destPath) {
       console.log('Cookies YouTube activés.');
     }
 
-    console.log('Commande: python3 ' + args.join(' '));
+    console.log('Commande: ' + getPythonBin() + ' ' + args.join(' '));
 
-    const processYtDlp = spawn('python3', args, { env: { ...process.env } });
+    const processYtDlp = spawn(getPythonBin(), args, { env: { ...process.env } });
 
     let stdout = '';
     let stderr = '';
