@@ -12,536 +12,253 @@ const { spawn } = require('child_process');
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const router = express.Router();
-
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
-
 fs.ensureDirSync(UPLOADS_DIR);
+const upload = multer({ dest: UPLOADS_DIR });
 
-const upload = multer({
-dest: UPLOADS_DIR
-});
+// Dossier où install-bgutil.sh a copié le plugin (chemin relatif au projet, pas $HOME —
+// $HOME n'est pas un emplacement de plugin reconnu par yt-dlp). Passé explicitement à
+// yt-dlp via --plugin-dirs pour ne dépendre d'aucun emplacement "par défaut" deviné.
+const PLUGIN_DIR = path.join(__dirname, '..', 'yt-dlp-plugins');
 
 const PLATFORM_HOSTS = [
-'youtube.com',
-'youtu.be',
-'m.youtube.com',
-'tiktok.com',
-'vm.tiktok.com',
-'vt.tiktok.com'
+  'youtube.com', 'youtu.be', 'm.youtube.com',
+  'tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com',
 ];
 
 function isPlatformUrl(url) {
-try {
-const parsed = new URL(url);
-const host = parsed.hostname.toLowerCase();
-
-```
-for (const platform of PLATFORM_HOSTS) {
-  if (host === platform) {
-    return true;
-  }
-
-  if (host.endsWith('.' + platform)) {
-    return true;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return PLATFORM_HOSTS.some((platform) => host === platform || host.endsWith('.' + platform));
+  } catch {
+    return false;
   }
 }
 
-return false;
-```
-
-} catch (error) {
-return false;
-}
-}
-
+// YouTube bloque souvent les téléchargements venant d'IP de serveurs cloud
+// ("Sign in to confirm you're not a bot"). De vrais cookies (d'un compte YouTube connecté,
+// exportés depuis un navigateur) contournent généralement ce blocage.
 let cachedCookiesPath = null;
-
 function getCookiesFilePath() {
-if (!process.env.YOUTUBE_COOKIES_BASE64) {
-console.log(
-'YOUTUBE_COOKIES_BASE64 non configure.'
-);
-return null;
+  if (!process.env.YOUTUBE_COOKIES_BASE64) {
+    console.log('YOUTUBE_COOKIES_BASE64 non configuré.');
+    return null;
+  }
+  if (cachedCookiesPath) return cachedCookiesPath;
+
+  const filePath = path.join(os.tmpdir(), 'yt-cookies.txt');
+  try {
+    const content = Buffer.from(process.env.YOUTUBE_COOKIES_BASE64, 'base64').toString('utf8');
+    fs.writeFileSync(filePath, content);
+    cachedCookiesPath = filePath;
+    console.log('Cookies YouTube préparés.');
+    return filePath;
+  } catch (error) {
+    console.error('Erreur création cookies YouTube:', error.message);
+    return null;
+  }
 }
 
-if (cachedCookiesPath) {
-return cachedCookiesPath;
-}
-
-const filePath = path.join(
-os.tmpdir(),
-'yt-cookies.txt'
-);
-
-try {
-const content = Buffer.from(
-process.env.YOUTUBE_COOKIES_BASE64,
-'base64'
-).toString('utf8');
-
-```
-fs.writeFileSync(
-  filePath,
-  content
-);
-
-cachedCookiesPath = filePath;
-
-console.log(
-  'Cookies YouTube prepares.'
-);
-
-return filePath;
-```
-
-} catch (error) {
-console.error(
-'Erreur creation cookies YouTube:',
-error.message
-);
-
-```
-return null;
-```
-
-}
-}
-
-const BGUTIL_BASE_URL =
-process.env.BGUTIL_BASE_URL ||
-'http://127.0.0.1:4416';
-
-console.log(
-'BgUtils URL: ' + BGUTIL_BASE_URL
-);
+// Serveur BgUtils PO Token (compilé par install-bgutil.sh, démarré séparément — voir
+// server.js). Génère le jeton "Proof of Origin" que YouTube exige de plus en plus souvent.
+const BGUTIL_BASE_URL = process.env.BGUTIL_BASE_URL || 'http://127.0.0.1:4416';
+console.log('BgUtils URL: ' + BGUTIL_BASE_URL);
 
 function downloadWithYtDlp(url, destPath) {
-return new Promise(function (resolve, reject) {
-console.log(
-'Telechargement avec yt-dlp Python: ' + url
-);
+  return new Promise((resolve, reject) => {
+    console.log('Téléchargement avec yt-dlp Python: ' + url);
 
-```
-const args = [
-  '-m',
-  'yt_dlp',
-  url,
-  '--output',
-  destPath,
-  '--format',
-  'bv*+ba/b',
-  '--no-playlist',
-  '--extractor-args',
-  'youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=' +
-    BGUTIL_BASE_URL,
-  '--no-check-certificates',
-  '--no-warnings'
-];
+    const args = [
+      '-m', 'yt_dlp',
+      url,
+      '--output', destPath,
+      // "bv*+ba" (flux séparés à fusionner) en priorité, repli sur "best" (déjà combiné) si
+      // le client ne propose pas de flux adaptatifs pour cette vidéo.
+      '--format', 'bv*+ba/best',
+      '--no-playlist',
+      '--extractor-args',
+      'youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=' + BGUTIL_BASE_URL,
+      '--no-check-certificates',
+      '--no-warnings',
+      // Emplacement explicite du plugin — voir commentaire sur PLUGIN_DIR plus haut.
+      '--plugin-dirs', PLUGIN_DIR,
+      // Nécessaire pour que yt-dlp sache fusionner vidéo+audio (format bv*+ba) : sans ça,
+      // il cherche un "ffmpeg" global sur le PATH, qui peut être absent.
+      '--ffmpeg-location', ffmpegPath,
+    ];
 
-const cookiesPath = getCookiesFilePath();
-
-if (cookiesPath) {
-  args.push(
-    '--cookies',
-    cookiesPath
-  );
-
-  console.log(
-    'Cookies YouTube actives.'
-  );
-}
-
-console.log(
-  'Commande: python3 ' +
-    args.join(' ')
-);
-
-const processYtDlp = spawn(
-  'python3',
-  args,
-  {
-    env: {
-      ...process.env
+    const cookiesPath = getCookiesFilePath();
+    if (cookiesPath) {
+      args.push('--cookies', cookiesPath);
+      console.log('Cookies YouTube activés.');
     }
-  }
-);
 
-let stdout = '';
-let stderr = '';
+    console.log('Commande: python3 ' + args.join(' '));
 
-processYtDlp.stdout.on(
-  'data',
-  function (data) {
-    const text = data.toString();
+    const processYtDlp = spawn('python3', args, { env: { ...process.env } });
 
-    stdout += text;
+    let stdout = '';
+    let stderr = '';
 
-    console.log(
-      '[yt-dlp] ' +
-        text.trim()
-    );
-  }
-);
+    processYtDlp.stdout.on('data', (data) => {
+      const text = data.toString();
+      stdout += text;
+      console.log('[yt-dlp] ' + text.trim());
+    });
 
-processYtDlp.stderr.on(
-  'data',
-  function (data) {
-    const text = data.toString();
+    processYtDlp.stderr.on('data', (data) => {
+      const text = data.toString();
+      stderr += text;
+      console.error('[yt-dlp] ' + text.trim());
+    });
 
-    stderr += text;
-
-    console.error(
-      '[yt-dlp] ' +
-        text.trim()
-    );
-  }
-);
-
-processYtDlp.on(
-  'error',
-  function (error) {
-    console.error(
-      'Erreur lancement yt-dlp:',
-      error.message
-    );
-
-    reject(error);
-  }
-);
-
-processYtDlp.on(
-  'close',
-  async function (code) {
-    try {
-      if (code !== 0) {
-        reject(
-          new Error(
-            'yt-dlp Python termine avec le code ' +
-              code +
-              ': ' +
-              stderr
-          )
-        );
-        return;
-      }
-
-      if (
-        await fs.pathExists(destPath)
-      ) {
-        console.log(
-          'Video telechargee: ' +
-            destPath
-        );
-
-        resolve(destPath);
-        return;
-      }
-
-      const directory =
-        path.dirname(destPath);
-
-      const baseName =
-        path.basename(
-          destPath,
-          path.extname(destPath)
-        );
-
-      const files =
-        await fs.readdir(directory);
-
-      const match =
-        files.find(
-          function (file) {
-            return file.startsWith(
-              baseName
-            );
-          }
-        );
-
-      if (match) {
-        const finalPath =
-          path.join(
-            directory,
-            match
-          );
-
-        console.log(
-          'Video trouvee: ' +
-            finalPath
-        );
-
-        resolve(finalPath);
-        return;
-      }
-
-      reject(
-        new Error(
-          'yt-dlp: fichier video introuvable apres telechargement.'
-        )
-      );
-    } catch (error) {
+    processYtDlp.on('error', (error) => {
+      console.error('Erreur lancement yt-dlp:', error.message);
       reject(error);
-    }
-  }
-);
-```
+    });
 
-});
+    processYtDlp.on('close', async (code) => {
+      try {
+        if (code !== 0) {
+          reject(new Error('yt-dlp Python terminé avec le code ' + code + ': ' + stderr));
+          return;
+        }
+
+        if (await fs.pathExists(destPath)) {
+          console.log('Vidéo téléchargée: ' + destPath);
+          resolve(destPath);
+          return;
+        }
+
+        // yt-dlp peut parfois écrire une extension différente : on vérifie
+        const directory = path.dirname(destPath);
+        const baseName = path.basename(destPath, path.extname(destPath));
+        const files = await fs.readdir(directory);
+        const match = files.find((file) => file.startsWith(baseName));
+        if (match) {
+          const finalPath = path.join(directory, match);
+          console.log('Vidéo trouvée: ' + finalPath);
+          resolve(finalPath);
+          return;
+        }
+
+        reject(new Error('yt-dlp: fichier vidéo introuvable après téléchargement.'));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
+// Télécharge une vidéo depuis une URL directe (mp4, mov, etc.) via un flux HTTP simple
 async function downloadDirect(url, destPath) {
-console.log(
-'Telechargement direct: ' + url
-);
-
-const response = await axios.get(
-url,
-{
-responseType: 'stream'
-}
-);
-
-const writer =
-fs.createWriteStream(destPath);
-
-response.data.pipe(writer);
-
-return new Promise(
-function (resolve, reject) {
-writer.on(
-'finish',
-function () {
-console.log(
-'Telechargement direct termine: ' +
-destPath
-);
-
-```
+  console.log('Téléchargement direct: ' + url);
+  const response = await axios.get(url, { responseType: 'stream' });
+  const writer = fs.createWriteStream(destPath);
+  response.data.pipe(writer);
+  return new Promise((resolve, reject) => {
+    writer.on('finish', () => {
+      console.log('Téléchargement direct terminé: ' + destPath);
       resolve(destPath);
-    }
-  );
-
-  writer.on(
-    'error',
-    reject
-  );
-
-  response.data.on(
-    'error',
-    reject
-  );
-}
-```
-
-);
+    });
+    writer.on('error', reject);
+    response.data.on('error', reject);
+  });
 }
 
+// Point d'entrée unique : détecte YouTube/TikTok vs URL directe
 async function downloadVideo(url, destPath) {
-if (isPlatformUrl(url)) {
-return downloadWithYtDlp(
-url,
-destPath
-);
-}
-
-return downloadDirect(
-url,
-destPath
-);
+  if (isPlatformUrl(url)) return downloadWithYtDlp(url, destPath);
+  return downloadDirect(url, destPath);
 }
 
 function extractAudio(videoPath, audioPath) {
-return new Promise(
-function (resolve, reject) {
-console.log(
-'Extraction audio: ' +
-videoPath
-);
-
-```
-  ffmpeg(videoPath)
-    .noVideo()
-    .audioCodec('libmp3lame')
-    .format('mp3')
-    .on(
-      'end',
-      function () {
-        console.log(
-          'Extraction audio terminee.'
-        );
-
+  return new Promise((resolve, reject) => {
+    console.log('Extraction audio: ' + videoPath);
+    ffmpeg(videoPath)
+      .noVideo()
+      .audioCodec('libmp3lame')
+      .format('mp3')
+      .on('end', () => {
+        console.log('Extraction audio terminée.');
         resolve();
-      }
-    )
-    .on(
-      'error',
-      function (error) {
-        console.error(
-          'Erreur FFmpeg:',
-          error.message
-        );
-
+      })
+      .on('error', (error) => {
+        console.error('Erreur FFmpeg:', error.message);
         reject(error);
-      }
-    )
-    .save(audioPath);
-}
-```
-
-);
+      })
+      .save(audioPath);
+  });
 }
 
 async function transcribeAudio(audioPath) {
-if (!process.env.OPENAI_API_KEY) {
-throw new Error(
-'OPENAI_API_KEY manquant dans .env'
-);
-}
-
-console.log(
-'Transcription OpenAI Whisper...'
-);
-
-const form = new FormData();
-
-form.append(
-'file',
-fs.createReadStream(audioPath)
-);
-
-form.append(
-'model',
-'whisper-1'
-);
-
-const headers = {
-...form.getHeaders(),
-Authorization:
-'Bearer ' +
-process.env.OPENAI_API_KEY
-};
-
-const response = await axios.post(
-'https://api.openai.com/v1/audio/transcriptions',
-form,
-{
-headers: headers,
-maxBodyLength: Infinity
-}
-);
-
-console.log(
-'Transcription terminee.'
-);
-
-return response.data.text;
-}
-
-router.post(
-'/transcribe',
-upload.single('video'),
-async function (req, res) {
-const tmpFiles = [];
-
-```
-try {
-  let videoPath;
-
-  if (req.file) {
-    videoPath = req.file.path;
-
-    tmpFiles.push(videoPath);
-
-    console.log(
-      'Video recue: ' +
-        videoPath
-    );
-  } else if (
-    req.body &&
-    req.body.videoUrl
-  ) {
-    const target = path.join(
-      UPLOADS_DIR,
-      'src_' +
-        Date.now() +
-        '.mp4'
-    );
-
-    videoPath =
-      await downloadVideo(
-        req.body.videoUrl,
-        target
-      );
-
-    tmpFiles.push(videoPath);
-  } else {
-    return res.status(400).json({
-      error:
-        'Fournissez video ou videoUrl.'
-    });
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY manquant dans .env');
   }
+  console.log('Transcription OpenAI Whisper...');
 
-  const audioPath = path.join(
-    UPLOADS_DIR,
-    'audio_' +
-      Date.now() +
-      '.mp3'
+  const form = new FormData();
+  form.append('file', fs.createReadStream(audioPath));
+  form.append('model', 'whisper-1');
+
+  const headers = { ...form.getHeaders(), Authorization: 'Bearer ' + process.env.OPENAI_API_KEY };
+
+  const response = await axios.post(
+    'https://api.openai.com/v1/audio/transcriptions',
+    form,
+    { headers, maxBodyLength: Infinity }
   );
 
-  tmpFiles.push(audioPath);
+  console.log('Transcription terminée.');
+  return response.data.text;
+}
 
-  await extractAudio(
-    videoPath,
-    audioPath
-  );
+router.post('/transcribe', upload.single('video'), async (req, res) => {
+  const tmpFiles = [];
+  try {
+    let videoPath;
 
-  const transcript =
-    await transcribeAudio(
-      audioPath
+    if (req.file) {
+      videoPath = req.file.path;
+      tmpFiles.push(videoPath);
+      console.log('Vidéo reçue: ' + videoPath);
+    } else if (req.body && req.body.videoUrl) {
+      const target = path.join(UPLOADS_DIR, 'src_' + Date.now() + '.mp4');
+      videoPath = await downloadVideo(req.body.videoUrl, target);
+      tmpFiles.push(videoPath);
+    } else {
+      return res.status(400).json({ error: 'Fournissez video ou videoUrl.' });
+    }
+
+    const audioPath = path.join(UPLOADS_DIR, 'audio_' + Date.now() + '.mp3');
+    tmpFiles.push(audioPath);
+    await extractAudio(videoPath, audioPath);
+
+    const transcript = await transcribeAudio(audioPath);
+
+    return res.json({ transcript, sourceVideoPath: videoPath });
+  } catch (error) {
+    console.error(
+      'Erreur transcription:',
+      (error.response && error.response.data) || error.message
     );
-
-  return res.json({
-    transcript: transcript,
-    sourceVideoPath: videoPath
-  });
-} catch (error) {
-  console.error(
-    'Erreur transcription:',
-    error.response &&
-    error.response.data
-      ? error.response.data
-      : error.message
-  );
-
-  return res.status(500).json({
-    error:
-      error.response &&
-      error.response.data &&
-      error.response.data.error &&
-      error.response.data.error.message
-        ? error.response.data.error.message
-        : error.message
-  });
-} finally {
-  for (const file of tmpFiles) {
-    try {
-      await fs.remove(file);
-    } catch (error) {
+    return res.status(500).json({
+      error:
+        (error.response && error.response.data && error.response.data.error && error.response.data.error.message) ||
+        error.message,
+    });
+  } finally {
+    for (const file of tmpFiles) {
+      try {
+        await fs.remove(file);
+      } catch {
+        // ignore
+      }
     }
   }
-}
-```
-
-}
-);
+});
 
 module.exports = router;
-
-module.exports.downloadVideo =
-downloadVideo;
-
-module.exports.extractAudio =
-extractAudio;
-
-module.exports.transcribeAudio =
-transcribeAudio;
+module.exports.downloadVideo = downloadVideo;
+module.exports.extractAudio = extractAudio;
+module.exports.transcribeAudio = transcribeAudio;
