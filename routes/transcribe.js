@@ -89,7 +89,7 @@ function downloadWithYtDlp(url, destPath) {
       '--output', destPath,
       // "bv*+ba" (flux séparés à fusionner) en priorité, repli sur "best" (déjà combiné) si
       // le client ne propose pas de flux adaptatifs pour cette vidéo.
-     '--format', 'best[ext=mp4]/best',
+     '--format', 'best',
       '--no-playlist',
       '--extractor-args',
       'youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=' + BGUTIL_BASE_URL,
