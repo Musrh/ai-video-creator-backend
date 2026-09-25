@@ -190,45 +190,41 @@ async function downloadWithYtDlp(url, destPath) {
    * FFmpeg fusionnera automatiquement vidéo + audio.
    */
 
-  const formatSelector =
-    'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+const formatSelector =
+  'bestvideo*+bestaudio/best';
 
-  /*
-   * ==========================================================
-   * ARGUMENTS YT-DLP
-   * ==========================================================
-   */
+const args = [
+  '-m',
+  'yt_dlp',
 
-  const args = [
-    '-m',
-    'yt_dlp',
+  url,
 
-    url,
+  '--output',
+  destPath,
 
-    '--output',
-    destPath,
+  '--format',
+  formatSelector,
 
-    '--format',
-    formatSelector,
+  '--merge-output-format',
+  'mp4',
 
-    '--merge-output-format',
-    'mp4',
+  '--no-playlist',
 
-    '--no-playlist',
+  '--extractor-args',
+  `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
 
-    '--extractor-args',
-    `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+  '--no-check-certificates',
 
-    '--no-check-certificates',
+  '--no-warnings',
 
-    '--no-warnings',
+  '--plugin-dirs',
+  PLUGIN_DIR,
 
-    '--plugin-dirs',
-    PLUGIN_DIR,
+  '--ffmpeg-location',
+  ffmpegPath
+];
 
-    '--ffmpeg-location',
-    ffmpegPath
-  ];
+   
 
   /*
    * Cookies facultatifs
