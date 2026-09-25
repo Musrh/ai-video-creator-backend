@@ -198,8 +198,7 @@ async function downloadWithYtDlp(url, destPath) {
     '--output',
     destPath,
 
-    '--format',
-    formatSelector,
+    '--format','best',
 
     '--merge-output-format',
     'mp4',
