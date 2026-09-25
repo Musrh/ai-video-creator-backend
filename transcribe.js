@@ -83,25 +83,42 @@ function downloadWithYtDlp(url, destPath) {
   return new Promise((resolve, reject) => {
     console.log('Téléchargement avec yt-dlp Python: ' + url);
 
-    const args = [
-      '-m', 'yt_dlp',
-      url,
-      '--output', destPath,
-      // "bv*+ba" (flux séparés à fusionner) en priorité, repli sur "best" (déjà combiné) si
-      // le client ne propose pas de flux adaptatifs pour cette vidéo.
-      '--format', 'bv*+ba/best',
-      '--no-playlist',
-      '--extractor-args',
-      'youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=' + BGUTIL_BASE_URL,
-      '--no-check-certificates',
-      '--no-warnings',
-      // Emplacement explicite du plugin — voir commentaire sur PLUGIN_DIR plus haut.
-      '--plugin-dirs', PLUGIN_DIR,
-      // Nécessaire pour que yt-dlp sache fusionner vidéo+audio (format bv*+ba) : sans ça,
-      // il cherche un "ffmpeg" global sur le PATH, qui peut être absent.
-      '--ffmpeg-location', ffmpegPath,
-    ];
+const args = [
+  '-m',
+  'yt_dlp',
 
+  url,
+
+  '--output',
+  destPath,
+
+  // Sélection robuste des formats YouTube :
+  // vidéo + audio séparés si nécessaire,
+  // sinon meilleur format disponible.
+  '--format',
+  'bestvideo*+bestaudio/best',
+
+  // Le fichier final utilisé par ton application sera en MP4.
+  '--merge-output-format',
+  'mp4',
+
+  '--no-playlist',
+
+  // Client YouTube + PO Token BgUtils
+  '--extractor-args',
+  `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+
+  '--no-check-certificates',
+  '--no-warnings',
+
+  '--plugin-dirs',
+  PLUGIN_DIR,
+
+  '--ffmpeg-location',
+  ffmpegPath
+];
+
+    
     const cookiesPath = getCookiesFilePath();
     if (cookiesPath) {
       args.push('--cookies', cookiesPath);
