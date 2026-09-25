@@ -190,8 +190,7 @@ async function downloadWithYtDlp(url, destPath) {
    * FFmpeg fusionnera automatiquement vidéo + audio.
    */
 
-const formatSelector =
-  'bestvideo*+bestaudio/best';
+
 
 const args = [
   '-m',
@@ -199,16 +198,9 @@ const args = [
 
   url,
 
-  '--output',
-  destPath,
-
-  '--format',
-  formatSelector,
-
-  '--merge-output-format',
-  'mp4',
-
   '--no-playlist',
+
+  '--list-formats',
 
   '--extractor-args',
   `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
@@ -223,6 +215,7 @@ const args = [
   '--ffmpeg-location',
   ffmpegPath
 ];
+   
 
    
 
