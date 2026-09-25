@@ -189,38 +189,33 @@ async function downloadWithYtDlp(url, destPath) {
   const formatSelector =
     'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
 
-  const args = [
-    '-m',
-    'yt_dlp',
+const args = [
+  '-m',
+  'yt_dlp',
 
-    url,
+  url,
 
-    '--output',
-    destPath,
+  '--output',
+  destPath,
 
-    '--format','best',
+  '--list-formats',
 
-    '--merge-output-format',
-    'mp4',
+  '--no-playlist',
 
-    '--no-playlist',
+  '--extractor-args',
+  `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
 
-    /*
-     * YouTube mweb + BgUtils PO Token
-     */
-    '--extractor-args',
-    `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+  '--no-check-certificates',
+  '--no-warnings',
 
-    '--no-check-certificates',
+  '--plugin-dirs',
+  PLUGIN_DIR,
 
-    '--no-warnings',
+  '--ffmpeg-location',
+  ffmpegPath
+];
 
-    '--plugin-dirs',
-    PLUGIN_DIR,
-
-    '--ffmpeg-location',
-    ffmpegPath
-  ];
+   
 
   /*
    * Cookies facultatifs
