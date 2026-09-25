@@ -83,19 +83,37 @@ function downloadWithYtDlp(url, destPath) {
   return new Promise((resolve, reject) => {
     console.log('Téléchargement avec yt-dlp Python: ' + url);
 
- const args = [
-  '-m', 'yt_dlp',
+
+    const args = [
+  '-m',
+  'yt_dlp',
+
   url,
-  '--output', destPath,
-  '--format', 'best',
+
+  '--output',
+  destPath,
+
+  '--format',
+  'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+
+  '--merge-output-format',
+  'mp4',
+
   '--no-playlist',
+
   '--extractor-args',
-  'youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=' + BGUTIL_BASE_URL,
+  `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+
   '--no-check-certificates',
   '--no-warnings',
-  '--plugin-dirs', PLUGIN_DIR,
-  '--ffmpeg-location', ffmpegPath,
+
+  '--plugin-dirs',
+  PLUGIN_DIR,
+
+  '--ffmpeg-location',
+  ffmpegPath
 ];
+
 
     const cookiesPath = getCookiesFilePath();
     if (cookiesPath) {
