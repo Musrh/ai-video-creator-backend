@@ -230,9 +230,7 @@ const args = [
     );
   }
 
-  console.log('');
-  console.log('🎯 Format selector:');
-  console.log(formatSelector);
+  
 
   console.log('');
   console.log('▶️ yt-dlp arguments:');
