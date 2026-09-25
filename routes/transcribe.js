@@ -11,13 +11,17 @@ const { spawn } = require('child_process');
 
 const router = express.Router();
 
-/* ============================================================
-   CONFIGURATION
-   ============================================================ */
+// =====================================================================
+// Upload
+// =====================================================================
 
 const upload = multer({
   dest: path.join(os.tmpdir(), 'ai-video-uploads')
 });
+
+// =====================================================================
+// Python
+// =====================================================================
 
 const PYTHON_BIN_PATH_FILE = path.join(
   __dirname,
@@ -46,9 +50,9 @@ function getPythonBin() {
   return process.env.PYTHON_BIN || 'python';
 }
 
-/* ============================================================
-   PLUGIN YT-DLP / BGUTIL PO TOKEN
-   ============================================================ */
+// =====================================================================
+// yt-dlp / BgUtils
+// =====================================================================
 
 const PLUGIN_DIR = path.join(
   __dirname,
@@ -60,9 +64,9 @@ const BGUTIL_BASE_URL =
   process.env.BGUTIL_BASE_URL ||
   'http://127.0.0.1:4416';
 
-/* ============================================================
-   PLATEFORMES SUPPORTÉES
-   ============================================================ */
+// =====================================================================
+// Plateformes autorisées
+// =====================================================================
 
 const PLATFORM_HOSTS = [
   'youtube.com',
@@ -70,20 +74,20 @@ const PLATFORM_HOSTS = [
   'youtu.be',
   'www.youtu.be',
   'm.youtube.com',
-
   'tiktok.com',
   'www.tiktok.com',
   'vm.tiktok.com'
 ];
 
-/* ============================================================
-   COOKIES YOUTUBE
-   ============================================================ */
+// =====================================================================
+// Cookies YouTube
+// =====================================================================
 
 function createYoutubeCookiesFile() {
   const base64 = process.env.YOUTUBE_COOKIES_BASE64;
 
   if (!base64) {
+    console.log('🍪 Aucun cookie YouTube configuré.');
     return null;
   }
 
@@ -103,7 +107,6 @@ function createYoutubeCookiesFile() {
     );
 
     return cookiesPath;
-
   } catch (err) {
     console.warn(
       '⚠️ Impossible de créer le fichier cookies:',
@@ -114,9 +117,9 @@ function createYoutubeCookiesFile() {
   }
 }
 
-/* ============================================================
-   VÉRIFICATION URL PLATEFORME
-   ============================================================ */
+// =====================================================================
+// Vérification URL
+// =====================================================================
 
 function isSupportedPlatformUrl(value) {
   try {
@@ -136,18 +139,16 @@ function isSupportedPlatformUrl(value) {
         hostname.endsWith(`.${normalizedHost}`)
       );
     });
-
   } catch (_) {
     return false;
   }
 }
 
-/* ============================================================
-   DOWNLOAD YOUTUBE / TIKTOK AVEC YT-DLP
-   ============================================================ */
+// =====================================================================
+// Téléchargement yt-dlp
+// =====================================================================
 
 async function downloadWithYtDlp(url, destPath) {
-
   const pythonBin = getPythonBin();
 
   console.log('');
@@ -162,67 +163,42 @@ async function downloadWithYtDlp(url, destPath) {
   console.log('FFmpeg:', ffmpegPath);
   console.log('================================================');
 
-  await fs.ensureDir(
-    path.dirname(destPath)
-  );
+  await fs.ensureDir(path.dirname(destPath));
 
-  const cookiesPath =
-    createYoutubeCookiesFile();
+  const cookiesPath = createYoutubeCookiesFile();
 
-  /*
-   * ==========================================================
-   * SÉLECTION DU FORMAT
-   * ==========================================================
-   *
-   * On ne fait PAS :
-   *
-   *   --format best
-   *
-   * car certains contenus YouTube n'ont pas de format
-   * progressif "best" disponible.
-   *
-   * On demande :
-   *
-   * 1. meilleur MP4 vidéo + meilleur M4A audio
-   * 2. meilleur MP4 vidéo/audio disponible
-   * 3. meilleur format global disponible
-   *
-   * FFmpeg fusionnera automatiquement vidéo + audio.
-   */
+  // IMPORTANT :
+  // Aucun --format ici.
+  // yt-dlp utilise donc sa sélection par défaut.
+  const args = [
+    '-m',
+    'yt_dlp',
 
+    url,
 
+    '--output',
+    destPath,
 
-const args = [
-  '-m',
-  'yt_dlp',
+    '--merge-output-format',
+    'mp4',
 
-  url,
+    '--no-playlist',
 
-  '--no-playlist',
+    '--extractor-args',
+    `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
 
-  '--list-formats',
+    '--no-check-certificates',
 
-  '--extractor-args',
-  `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+    '--no-warnings',
 
-  '--no-check-certificates',
+    '--plugin-dirs',
+    PLUGIN_DIR,
 
-  '--no-warnings',
+    '--ffmpeg-location',
+    ffmpegPath
+  ];
 
-  '--plugin-dirs',
-  PLUGIN_DIR,
-
-  '--ffmpeg-location',
-  ffmpegPath
-];
-   
-
-   
-
-  /*
-   * Cookies facultatifs
-   */
-
+  // Ajouter les cookies uniquement s'ils existent
   if (cookiesPath) {
     args.push(
       '--cookies',
@@ -230,39 +206,33 @@ const args = [
     );
   }
 
-  
-
   console.log('');
   console.log('▶️ yt-dlp arguments:');
   console.log(args.join(' '));
   console.log('');
 
   return new Promise((resolve, reject) => {
-
     const child = spawn(
       pythonBin,
       args,
       {
-        stdio: [
-          'ignore',
-          'pipe',
-          'pipe'
-        ]
+        stdio: ['ignore', 'pipe', 'pipe']
       }
     );
 
     let stdout = '';
     let stderr = '';
 
-    child.stdout.on('data', chunk => {
+    // ---------------------------------------------------------------
+    // stdout
+    // ---------------------------------------------------------------
 
-      const text =
-        chunk.toString();
+    child.stdout.on('data', chunk => {
+      const text = chunk.toString();
 
       stdout += text;
 
-      const lines =
-        text.split(/\r?\n/);
+      const lines = text.split(/\r?\n/);
 
       for (const line of lines) {
         if (line.trim()) {
@@ -273,15 +243,16 @@ const args = [
       }
     });
 
-    child.stderr.on('data', chunk => {
+    // ---------------------------------------------------------------
+    // stderr
+    // ---------------------------------------------------------------
 
-      const text =
-        chunk.toString();
+    child.stderr.on('data', chunk => {
+      const text = chunk.toString();
 
       stderr += text;
 
-      const lines =
-        text.split(/\r?\n/);
+      const lines = text.split(/\r?\n/);
 
       for (const line of lines) {
         if (line.trim()) {
@@ -292,231 +263,192 @@ const args = [
       }
     });
 
-    child.on(
-      'error',
-      async err => {
+    // ---------------------------------------------------------------
+    // Erreur lancement
+    // ---------------------------------------------------------------
 
-        if (cookiesPath) {
-          await fs.remove(
-            cookiesPath
-          ).catch(() => {});
-        }
+    child.on('error', async err => {
+      if (cookiesPath) {
+        await fs
+          .remove(cookiesPath)
+          .catch(() => {});
+      }
+
+      reject(
+        new Error(
+          `Impossible de lancer yt-dlp: ${err.message}`
+        )
+      );
+    });
+
+    // ---------------------------------------------------------------
+    // Process terminé
+    // ---------------------------------------------------------------
+
+    child.on('close', async code => {
+      if (cookiesPath) {
+        await fs
+          .remove(cookiesPath)
+          .catch(() => {});
+      }
+
+      // -------------------------------------------------------------
+      // Erreur yt-dlp
+      // -------------------------------------------------------------
+
+      if (code !== 0) {
+        const details =
+          stderr.trim() ||
+          stdout.trim() ||
+          'Erreur inconnue yt-dlp';
+
+        console.error('');
+        console.error(
+          '❌ yt-dlp terminé avec le code:',
+          code
+        );
+        console.error(details);
+        console.error('');
 
         reject(
           new Error(
-            `Impossible de lancer yt-dlp: ${err.message}`
+            `yt-dlp Python terminé avec le code ${code}: ${details}`
           )
         );
+
+        return;
       }
-    );
 
-    child.on(
-      'close',
-      async code => {
+      // -------------------------------------------------------------
+      // Fichier demandé trouvé
+      // -------------------------------------------------------------
 
-        if (cookiesPath) {
-          await fs.remove(
-            cookiesPath
-          ).catch(() => {});
-        }
+      if (await fs.pathExists(destPath)) {
+        const stats = await fs.stat(destPath);
 
-        /*
-         * ======================================================
-         * ERREUR YT-DLP
-         * ======================================================
-         */
-
-        if (code !== 0) {
-
-          const details =
-            stderr.trim() ||
-            stdout.trim() ||
-            'Erreur inconnue yt-dlp';
-
-          console.error('');
-          console.error(
-            '❌ yt-dlp terminé avec le code:',
-            code
-          );
-
-          console.error(details);
-          console.error('');
-
-          reject(
-            new Error(
-              `yt-dlp Python terminé avec le code ${code}: ${details}`
-            )
-          );
-
-          return;
-        }
-
-        /*
-         * ======================================================
-         * VÉRIFICATION FICHIER FINAL
-         * ======================================================
-         */
-
-        if (
-          await fs.pathExists(
-            destPath
-          )
-        ) {
-
-          const stats =
-            await fs.stat(
-              destPath
-            );
-
-          console.log('');
-          console.log(
-            '✅ Vidéo téléchargée:',
-            destPath
-          );
-
-          console.log(
-            '📦 Taille:',
-            stats.size,
-            'octets'
-          );
-
-          resolve(destPath);
-
-          return;
-        }
-
-        /*
-         * ======================================================
-         * RECHERCHE D'UN FICHIER GÉNÉRÉ
-         * ======================================================
-         */
-
-        const directory =
-          path.dirname(destPath);
-
-        const requestedName =
-          path.basename(destPath);
-
-        let files = [];
-
-        try {
-          files =
-            await fs.readdir(
-              directory
-            );
-        } catch (_) {}
-
-        const baseName =
-          path.basename(
-            destPath,
-            path.extname(destPath)
-          );
-
-        const candidates =
-          files
-            .filter(file => {
-
-              return (
-                file === requestedName ||
-                file.startsWith(baseName)
-              );
-            })
-            .map(file =>
-              path.join(
-                directory,
-                file
-              )
-            );
-
-        /*
-         * On privilégie les fichiers vidéo.
-         */
-
-        const videoCandidates =
-          candidates.filter(file => {
-
-            const ext =
-              path.extname(file)
-                .toLowerCase();
-
-            return [
-              '.mp4',
-              '.mkv',
-              '.webm',
-              '.mov'
-            ].includes(ext);
-          });
-
-        if (
-          videoCandidates.length > 0
-        ) {
-
-          console.log(
-            '✅ Fichier vidéo téléchargé trouvé:',
-            videoCandidates[0]
-          );
-
-          resolve(
-            videoCandidates[0]
-          );
-
-          return;
-        }
-
-        /*
-         * Dernier recours
-         */
-
-        if (
-          candidates.length > 0
-        ) {
-
-          console.log(
-            '✅ Fichier téléchargé trouvé:',
-            candidates[0]
-          );
-
-          resolve(
-            candidates[0]
-          );
-
-          return;
-        }
-
-        /*
-         * Aucun fichier
-         */
-
-        reject(
-          new Error(
-            'yt-dlp indique que le téléchargement est terminé, mais aucun fichier vidéo n’a été trouvé.'
-          )
+        console.log('');
+        console.log(
+          '✅ Vidéo téléchargée:',
+          destPath
         );
+
+        console.log(
+          '📦 Taille:',
+          stats.size,
+          'octets'
+        );
+
+        resolve(destPath);
+
+        return;
       }
-    );
+
+      // -------------------------------------------------------------
+      // Recherche d'un fichier généré avec un autre nom/extension
+      // -------------------------------------------------------------
+
+      const directory = path.dirname(destPath);
+
+      const requestedName = path.basename(destPath);
+
+      let files = [];
+
+      try {
+        files = await fs.readdir(directory);
+      } catch (_) {
+        files = [];
+      }
+
+      const baseName = path.basename(
+        destPath,
+        path.extname(destPath)
+      );
+
+      const candidates = files
+        .filter(
+          file =>
+            file === requestedName ||
+            file.startsWith(baseName)
+        )
+        .map(file =>
+          path.join(directory, file)
+        );
+
+      // -------------------------------------------------------------
+      // Fichiers vidéo
+      // -------------------------------------------------------------
+
+      const videoCandidates =
+        candidates.filter(file => {
+          const ext = path
+            .extname(file)
+            .toLowerCase();
+
+          return [
+            '.mp4',
+            '.mkv',
+            '.webm',
+            '.mov'
+          ].includes(ext);
+        });
+
+      if (videoCandidates.length > 0) {
+        console.log(
+          '✅ Fichier vidéo téléchargé trouvé:',
+          videoCandidates[0]
+        );
+
+        resolve(
+          videoCandidates[0]
+        );
+
+        return;
+      }
+
+      // -------------------------------------------------------------
+      // Autre fichier trouvé
+      // -------------------------------------------------------------
+
+      if (candidates.length > 0) {
+        console.log(
+          '✅ Fichier téléchargé trouvé:',
+          candidates[0]
+        );
+
+        resolve(
+          candidates[0]
+        );
+
+        return;
+      }
+
+      // -------------------------------------------------------------
+      // Aucun fichier
+      // -------------------------------------------------------------
+
+      reject(
+        new Error(
+          'yt-dlp indique que le téléchargement est terminé, mais aucun fichier vidéo n’a été trouvé.'
+        )
+      );
+    });
   });
 }
 
-/* ============================================================
-   TÉLÉCHARGEMENT VIDÉO
-   ============================================================ */
+// =====================================================================
+// Téléchargement vidéo
+// =====================================================================
 
-async function downloadVideo(
-  url,
-  destPath
-) {
-
+async function downloadVideo(url, destPath) {
   if (!url) {
     throw new Error(
       'URL vidéo manquante.'
     );
   }
 
-  if (
-    !isSupportedPlatformUrl(url)
-  ) {
+  if (!isSupportedPlatformUrl(url)) {
     throw new Error(
-      'URL vidéo non supportée.'
+      'Plateforme vidéo non supportée.'
     );
   }
 
@@ -526,184 +458,125 @@ async function downloadVideo(
   );
 }
 
-/* ============================================================
-   EXTRACTION AUDIO AVEC FFMPEG
-   ============================================================ */
+// =====================================================================
+// Extraction audio avec FFmpeg
+// =====================================================================
 
 async function extractAudio(
   videoPath,
   outputPath
 ) {
-
   if (!videoPath) {
     throw new Error(
-      'Chemin vidéo manquant pour extraction audio.'
+      'Fichier vidéo manquant.'
     );
   }
 
-  if (
-    !await fs.pathExists(
-      videoPath
-    )
-  ) {
+  if (!await fs.pathExists(videoPath)) {
     throw new Error(
-      `Vidéo introuvable: ${videoPath}`
+      `Fichier vidéo introuvable: ${videoPath}`
     );
   }
 
-  if (!outputPath) {
-
-    outputPath =
-      path.join(
-        os.tmpdir(),
-        `audio-${Date.now()}.mp3`
-      );
-  }
+  console.log('');
+  console.log(
+    '🎵 Extraction audio avec FFmpeg'
+  );
+  console.log(
+    'Vidéo:',
+    videoPath
+  );
+  console.log(
+    'Audio:',
+    outputPath
+  );
+  console.log(
+    'FFmpeg:',
+    ffmpegPath
+  );
 
   await fs.ensureDir(
     path.dirname(outputPath)
   );
 
-  console.log(
-    '🎵 Extraction audio:',
-    videoPath
-  );
-
   return new Promise(
     (resolve, reject) => {
-
       ffmpeg(videoPath)
-
-        .setFfmpegPath(
-          ffmpegPath
-        )
-
+        .setFfmpegPath(ffmpegPath)
         .noVideo()
-
-        .audioCodec(
-          'libmp3lame'
-        )
-
-        .audioBitrate(
-          '128k'
-        )
-
-        .format(
-          'mp3'
-        )
-
-        .on(
-          'start',
-          commandLine => {
-
+        .audioCodec('libmp3lame')
+        .audioBitrate('128k')
+        .output(outputPath)
+        .on('start', commandLine => {
+          console.log(
+            '▶️ FFmpeg:',
+            commandLine
+          );
+        })
+        .on('progress', progress => {
+          if (
+            progress &&
+            progress.percent !== undefined
+          ) {
             console.log(
-              '▶️ FFmpeg:',
-              commandLine
+              `🎵 Progression audio: ${progress.percent.toFixed(1)}%`
             );
           }
-        )
+        })
+        .on('end', () => {
+          console.log(
+            '✅ Extraction audio terminée:',
+            outputPath
+          );
 
-        .on(
-          'progress',
-          progress => {
+          resolve(outputPath);
+        })
+        .on('error', err => {
+          console.error(
+            '❌ Erreur FFmpeg:',
+            err.message
+          );
 
-            if (
-              progress &&
-              typeof progress.percent ===
-                'number'
-            ) {
-
-              console.log(
-                `🎵 Audio: ${progress.percent.toFixed(1)}%`
-              );
-            }
-          }
-        )
-
-        .on(
-          'end',
-          () => {
-
-            console.log(
-              '✅ Extraction audio terminée:',
-              outputPath
-            );
-
-            resolve(
-              outputPath
-            );
-          }
-        )
-
-        .on(
-          'error',
-          err => {
-
-            console.error(
-              '❌ Erreur FFmpeg:',
-              err.message
-            );
-
-            reject(
-              new Error(
-                `Erreur extraction audio: ${err.message}`
-              )
-            );
-          }
-        )
-
-        .save(
-          outputPath
-        );
+          reject(
+            new Error(
+              `Erreur FFmpeg: ${err.message}`
+            )
+          );
+        })
+        .run();
     }
   );
 }
 
-/* ============================================================
-   TRANSCRIPTION WHISPER
-   ============================================================ */
+// =====================================================================
+// Transcription OpenAI Whisper
+// =====================================================================
 
 async function transcribeAudio(
   audioPath
 ) {
-
-  if (
-    !process.env.OPENAI_API_KEY
-  ) {
+  if (!process.env.OPENAI_API_KEY) {
     throw new Error(
-      'OPENAI_API_KEY manquant dans .env'
+      'OPENAI_API_KEY manquante.'
     );
   }
 
-  if (!audioPath) {
-    throw new Error(
-      'Fichier audio manquant.'
-    );
-  }
-
-  if (
-    !await fs.pathExists(
-      audioPath
-    )
-  ) {
+  if (!await fs.pathExists(audioPath)) {
     throw new Error(
       `Fichier audio introuvable: ${audioPath}`
     );
   }
 
+  console.log('');
   console.log(
-    '📝 Transcription Whisper:',
-    audioPath
+    '📝 Transcription avec OpenAI Whisper...'
   );
 
-  const form =
-    new FormData();
+  const form = new FormData();
 
   form.append(
     'file',
-    fs.createReadStream(
-      audioPath
-    )
+    fs.createReadStream(audioPath)
   );
 
   form.append(
@@ -711,77 +584,40 @@ async function transcribeAudio(
     'whisper-1'
   );
 
-  try {
+  const response = await axios.post(
+    'https://api.openai.com/v1/audio/transcriptions',
+    form,
+    {
+      headers: {
+        ...form.getHeaders(),
+        Authorization:
+          `Bearer ${process.env.OPENAI_API_KEY}`
+      },
 
-    const response =
-      await axios.post(
-        'https://api.openai.com/v1/audio/transcriptions',
-        form,
-        {
-          headers: {
-            ...form.getHeaders(),
+      maxContentLength:
+        Infinity,
 
-            Authorization:
-              `Bearer ${process.env.OPENAI_API_KEY}`
-          },
+      maxBodyLength:
+        Infinity,
 
-          maxContentLength:
-            Infinity,
-
-          maxBodyLength:
-            Infinity,
-
-          timeout:
-            300000
-        }
-      );
-
-    const transcript =
-      response.data?.text ||
-      '';
-
-    if (
-      !transcript.trim()
-    ) {
-      throw new Error(
-        'Whisper a retourné une transcription vide.'
-      );
+      timeout:
+        10 * 60 * 1000
     }
+  );
 
-    console.log(
-      '✅ Transcription terminée.'
-    );
+  console.log(
+    '✅ Transcription terminée.'
+  );
 
-    return transcript.trim();
-
-  } catch (err) {
-
-    console.error(
-      '❌ Erreur Whisper:',
-      err.response?.data ||
-      err.message
-    );
-
-    if (
-      err.response?.data?.error?.message
-    ) {
-
-      throw new Error(
-        `Whisper : ${err.response.data.error.message}`
-      );
-    }
-
-    throw err;
-  }
+  return response.data.text || '';
 }
 
-/* ============================================================
-   ROUTE POST /transcribe
-   ============================================================ */
+// =====================================================================
+// POST /transcribe
+// =====================================================================
 
 router.post(
   '/transcribe',
-
   upload.fields([
     {
       name: 'video',
@@ -792,191 +628,267 @@ router.post(
       maxCount: 1
     }
   ]),
-
   async (req, res) => {
-
-    let videoPath =
-      null;
-
-    let audioPath =
-      null;
+    let uploadedVideoPath = null;
+    let downloadedVideoPath = null;
+    let audioPath = null;
 
     try {
+      console.log('');
+      console.log(
+        '================================================'
+      );
+      console.log(
+        '🎬 NOUVELLE DEMANDE DE TRANSCRIPTION'
+      );
+      console.log(
+        '================================================'
+      );
+
+      // -------------------------------------------------------------
+      // Vérification API key
+      // -------------------------------------------------------------
+
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(500).json({
+          error:
+            'OPENAI_API_KEY manquante sur le serveur.'
+        });
+      }
+
+      // -------------------------------------------------------------
+      // Récupération fichier uploadé
+      // -------------------------------------------------------------
+
+      const videoFile =
+        req.files?.video?.[0] ||
+        req.files?.sourceVideo?.[0];
+
+      // -------------------------------------------------------------
+      // Récupération URL
+      // -------------------------------------------------------------
 
       const videoUrl =
         req.body?.videoUrl ||
         req.body?.url ||
-        '';
-
-      const uploadedVideo =
-        req.files?.video?.[0] ||
-        req.files?.sourceVideo?.[0] ||
         null;
 
-      /*
-       * ======================================================
-       * CAS 1 : FICHIER UPLOADÉ
-       * ======================================================
-       */
+      console.log(
+        '📌 URL reçue:',
+        videoUrl || 'Aucune'
+      );
 
-      if (
-        uploadedVideo
-      ) {
+      console.log(
+        '📌 Fichier reçu:',
+        videoFile
+          ? videoFile.path
+          : 'Aucun'
+      );
 
-        videoPath =
-          uploadedVideo.path;
+      // -------------------------------------------------------------
+      // Aucun fichier et aucune URL
+      // -------------------------------------------------------------
+
+      if (!videoFile && !videoUrl) {
+        return res.status(400).json({
+          error:
+            'Veuillez fournir une vidéo ou une URL vidéo.'
+        });
+      }
+
+      // =============================================================
+      // CAS 1 : FICHIER UPLOADÉ
+      // =============================================================
+
+      if (videoFile) {
+        uploadedVideoPath =
+          videoFile.path;
+
+        console.log('');
+        console.log(
+          '📂 Vidéo uploadée:',
+          uploadedVideoPath
+        );
+
+        const extension =
+          path.extname(
+            videoFile.originalname || ''
+          ) || '.mp4';
+
+        const normalizedVideoPath =
+          path.join(
+            os.tmpdir(),
+            `source-${Date.now()}${extension}`
+          );
+
+        await fs.move(
+          uploadedVideoPath,
+          normalizedVideoPath,
+          {
+            overwrite: true
+          }
+        );
+
+        uploadedVideoPath =
+          normalizedVideoPath;
+
+        downloadedVideoPath =
+          normalizedVideoPath;
 
         console.log(
-          '📁 Vidéo uploadée:',
-          videoPath
+          '✅ Vidéo prête:',
+          downloadedVideoPath
         );
       }
 
-      /*
-       * ======================================================
-       * CAS 2 : URL YOUTUBE / TIKTOK
-       * ======================================================
-       */
+      // =============================================================
+      // CAS 2 : URL YOUTUBE / TIKTOK
+      // =============================================================
 
-      else if (
-        videoUrl
-      ) {
+      else if (videoUrl) {
+        if (
+          !isSupportedPlatformUrl(
+            videoUrl
+          )
+        ) {
+          return res.status(400).json({
+            error:
+              'URL YouTube/TikTok non supportée.'
+          });
+        }
 
-        const extension =
-          '.mp4';
-
-        videoPath =
+        downloadedVideoPath =
           path.join(
-            __dirname,
-            '..',
-            'uploads',
-            `src_${Date.now()}${extension}`
+            '/app/uploads',
+            `src_${Date.now()}.mp4`
           );
 
         await fs.ensureDir(
-          path.dirname(videoPath)
+          '/app/uploads'
         );
 
-        videoPath =
-          await downloadVideo(
-            videoUrl,
-            videoPath
-          );
-      }
-
-      /*
-       * ======================================================
-       * AUCUNE SOURCE
-       * ======================================================
-       */
-
-      else {
-
-        return res
-          .status(400)
-          .json({
-            error:
-              'Aucune vidéo ou URL vidéo fournie.'
-          });
-      }
-
-      /*
-       * ======================================================
-       * EXTRACTION AUDIO
-       * ======================================================
-       */
-
-      audioPath =
-        path.join(
-          os.tmpdir(),
-          `audio-${Date.now()}.mp3`
+        console.log('');
+        console.log(
+          '🌐 Téléchargement depuis:',
+          videoUrl
         );
+
+        await downloadVideo(
+          videoUrl,
+          downloadedVideoPath
+        );
+
+        console.log(
+          '✅ Vidéo source disponible:',
+          downloadedVideoPath
+        );
+      }
+
+      // =============================================================
+      // EXTRACTION AUDIO
+      // =============================================================
+
+      audioPath = path.join(
+        os.tmpdir(),
+        `audio-${Date.now()}.mp3`
+      );
 
       await extractAudio(
-        videoPath,
+        downloadedVideoPath,
         audioPath
       );
 
-      /*
-       * ======================================================
-       * WHISPER
-       * ======================================================
-       */
+      // =============================================================
+      // TRANSCRIPTION
+      // =============================================================
 
       const transcript =
         await transcribeAudio(
           audioPath
         );
 
-      /*
-       * ======================================================
-       * RÉPONSE
-       * ======================================================
-       */
+      // =============================================================
+      // RÉPONSE
+      // =============================================================
+
+      console.log('');
+      console.log(
+        '================================================'
+      );
+      console.log(
+        '✅ TRANSCRIPTION TERMINÉE'
+      );
+      console.log(
+        '================================================'
+      );
 
       return res.json({
         transcript,
-
         sourceVideoPath:
-          videoPath
+          downloadedVideoPath
       });
-
-    } catch (err) {
-
+    } catch (error) {
+      console.error('');
       console.error(
-        '❌ /transcribe:',
-        err.response?.data ||
-        err.message
+        '================================================'
+      );
+      console.error(
+        '❌ ERREUR TRANSCRIPTION'
+      );
+      console.error(
+        '================================================'
+      );
+      console.error(
+        error?.message ||
+          error
+      );
+      console.error(
+        '================================================'
       );
 
-      return res
-        .status(500)
-        .json({
-          error:
-            err.message ||
-            'Erreur transcription vidéo.'
-        });
-
+      return res.status(500).json({
+        error:
+          error?.message ||
+          'Erreur pendant la transcription.'
+      });
     } finally {
+      // -------------------------------------------------------------
+      // Nettoyage audio
+      // -------------------------------------------------------------
 
-      /*
-       * ======================================================
-       * SUPPRESSION AUDIO TEMPORAIRE
-       * ======================================================
-       */
-
-      if (
-        audioPath
-      ) {
-
-        await fs.remove(
-          audioPath
-        ).catch(() => {});
+      if (audioPath) {
+        await fs
+          .remove(audioPath)
+          .catch(() => {});
       }
 
-      /*
-       * ======================================================
-       * IMPORTANT
-       *
-       * La vidéo téléchargée depuis YouTube/TikTok
-       * n'est PAS supprimée ici.
-       *
-       * /analyze-source peut donc la réutiliser.
-       *
-       * Les fichiers uploadés Multer restent également
-       * gérés séparément.
-       * ======================================================
-       */
+      // -------------------------------------------------------------
+      // Nettoyage fichier uploadé temporaire
+      // -------------------------------------------------------------
+
+      if (
+        uploadedVideoPath &&
+        uploadedVideoPath !==
+          downloadedVideoPath
+      ) {
+        await fs
+          .remove(uploadedVideoPath)
+          .catch(() => {});
+      }
+
+      // IMPORTANT :
+      // downloadedVideoPath n'est PAS supprimé ici.
+      //
+      // Il peut être utilisé ensuite par /analyze-source.
     }
   }
 );
 
-/* ============================================================
-   EXPORTS
-   ============================================================ */
+// =====================================================================
+// Export
+// =====================================================================
 
-module.exports =
-  router;
+module.exports = router;
 
 module.exports.downloadVideo =
   downloadVideo;
