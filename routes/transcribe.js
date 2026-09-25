@@ -175,6 +175,7 @@ async function downloadWithYtDlp(url, destPath) {
     'yt_dlp',
 
     url,
+    '--list-formats',
 
     '--output',
     destPath,
