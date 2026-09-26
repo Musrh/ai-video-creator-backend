@@ -191,8 +191,8 @@ function buildCommonArgs() {
     //
     // Le précédent mweb ne retournait que les storyboards sb0-sb3.
     //
-    'youtube:player_client=web,mweb;youtubepot-bgutilhttp:base_url=' +
-      BGUTIL_BASE_URL,
+    'youtube:player_client=tv,web,mweb;youtubepot-bgutilhttp:base_url=' +
+  BGUTIL_BASE_URL,
 
     '--no-check-certificates',
 
