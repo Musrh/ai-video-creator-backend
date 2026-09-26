@@ -14,7 +14,16 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const router = express.Router();
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+// ============================================================
+// DOSSIER UPLOADS
+// ============================================================
+
+const UPLOADS_DIR = path.join(
+  __dirname,
+  '..',
+  'uploads'
+);
+
 fs.ensureDirSync(UPLOADS_DIR);
 
 const upload = multer({
@@ -44,7 +53,8 @@ function getPythonBin() {
       return content;
     }
   } catch {
-    // Fichier absent : python3 générique
+    // Fichier absent :
+    // utilisation de python3
   }
 
   return 'python3';
@@ -61,7 +71,7 @@ const PLUGIN_DIR = path.join(
 );
 
 // ============================================================
-// PLATEFORMES
+// PLATEFORMES SUPPORTÉES
 // ============================================================
 
 const PLATFORM_HOSTS = [
@@ -186,7 +196,8 @@ function getCookiesFilePath() {
       content
     );
 
-    cachedCookiesPath = filePath;
+    cachedCookiesPath =
+      filePath;
 
     console.log(
       'Cookies YouTube préparés.'
@@ -217,27 +228,32 @@ console.log(
 );
 
 // ============================================================
-// ARGUMENTS COMMUNS yt-dlp
+// ARGUMENTS yt-dlp
 // ============================================================
 
-function buildCommonArgs(
-  playerClient = 'mweb'
-) {
+function buildCommonArgs(playerClient) {
+  if (!playerClient) {
+    playerClient = 'mweb';
+  }
+
+  // IMPORTANT :
+  // Construction sans template literal/backticks.
+  //
+  // Cela évite l'erreur :
+  // SyntaxError: Unexpected identifier 'youtube'
+  //
+
+  const extractorArgs =
+    'youtube:player_client=' +
+    playerClient +
+    ';youtubepot-bgutilhttp:base_url=' +
+    BGUTIL_BASE_URL;
+
   const args = [
     '--no-playlist',
 
     '--extractor-args',
-
-    // --------------------------------------------------------
-    // Un seul client YouTube à la fois.
-    //
-    // Cela permet de tester précisément :
-    // mweb → tv → web
-    //
-    // avec le plugin BGUTIL PO Token.
-    // --------------------------------------------------------
-
-    `youtube:player_client=${playerClient};youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+    extractorArgs,
 
     '--no-check-certificates',
 
@@ -268,7 +284,7 @@ function runYtDlp(args) {
   return new Promise(
     (resolve, reject) => {
       console.log(
-        '\n----------------------------------------'
+        '\n========================================'
       );
 
       console.log(
@@ -282,7 +298,7 @@ function runYtDlp(args) {
       );
 
       console.log(
-        '----------------------------------------\n'
+        '========================================\n'
       );
 
       const proc = spawn(
@@ -339,7 +355,8 @@ function runYtDlp(args) {
         'close',
         (code) => {
           console.log(
-            `yt-dlp terminé avec le code ${code}`
+            'yt-dlp terminé avec le code ' +
+              code
           );
 
           resolve({
@@ -357,30 +374,17 @@ function runYtDlp(args) {
 // DÉTECTION DES FORMATS
 // ============================================================
 
-function hasUsableFormats(
-  stdout
-) {
+function hasUsableFormats(stdout) {
   if (!stdout) {
     return false;
   }
 
-  // yt-dlp affiche généralement :
-  //
-  // ID  EXT  RESOLUTION ...
-  //
-  // puis des lignes comme :
-  //
-  // 18  mp4  360p ...
-  //
-  // 137 mp4  1080p ...
-  //
-  // 140 m4a  audio only ...
-  //
-
   const lines =
     stdout.split('\n');
 
-  for (const line of lines) {
+  for (
+    const line of lines
+  ) {
     const trimmed =
       line.trim();
 
@@ -388,7 +392,7 @@ function hasUsableFormats(
       continue;
     }
 
-    // Ignore l'en-tête
+    // En-tête
     if (
       /^ID\s+EXT\s+/i.test(
         trimmed
@@ -397,7 +401,7 @@ function hasUsableFormats(
       continue;
     }
 
-    // Ignore les lignes décoratives
+    // Lignes système
     if (
       trimmed.startsWith('[') ||
       trimmed.startsWith('-')
@@ -405,7 +409,7 @@ function hasUsableFormats(
       continue;
     }
 
-    // Recherche d'une ligne de format
+    // Ligne de format yt-dlp
     if (
       /^\d+\s+\w+\s+/i.test(
         trimmed
@@ -419,7 +423,7 @@ function hasUsableFormats(
 }
 
 // ============================================================
-// TÉLÉCHARGEMENT YOUTUBE / TIKTOK
+// TÉLÉCHARGEMENT yt-dlp
 // ============================================================
 
 async function downloadWithYtDlp(
@@ -431,7 +435,7 @@ async function downloadWithYtDlp(
   );
 
   console.log(
-    'Téléchargement avec yt-dlp Python'
+    'Téléchargement avec yt-dlp'
   );
 
   console.log(
@@ -458,7 +462,7 @@ async function downloadWithYtDlp(
   }
 
   // ----------------------------------------------------------
-  // CLIENTS YOUTUBE À TESTER
+  // CLIENTS À TESTER
   // ----------------------------------------------------------
 
   const clients = [
@@ -470,16 +474,19 @@ async function downloadWithYtDlp(
   let lastResult = null;
 
   // ==========================================================
-  // TEST SUCCESSIF
+  // TEST CLIENT PAR CLIENT
   // ==========================================================
 
-  for (const client of clients) {
+  for (
+    const client of clients
+  ) {
     console.log(
-      '\n\n========================================'
+      '\n========================================'
     );
 
     console.log(
-      `TEST CLIENT YOUTUBE: ${client}`
+      'TEST CLIENT YOUTUBE: ' +
+        client
     );
 
     console.log(
@@ -487,7 +494,7 @@ async function downloadWithYtDlp(
     );
 
     // --------------------------------------------------------
-    // 1. DIAGNOSTIC --list-formats
+    // DIAGNOSTIC --list-formats
     // --------------------------------------------------------
 
     const listArgs = [
@@ -506,36 +513,48 @@ async function downloadWithYtDlp(
     const listResult =
       await runYtDlp(
         listArgs
-      ).catch((error) => ({
-        code: 1,
-        stdout: '',
-        stderr:
-          error.message,
-      }));
+      ).catch(
+        (error) => ({
+          code: 1,
+          stdout: '',
+          stderr:
+            error.message,
+        })
+      );
 
     lastResult =
       listResult;
 
-    const combinedOutput =
-      (
-        listResult.stdout ||
-        ''
-      ) +
-      (
-        listResult.stderr ||
-        ''
-      );
-
     console.log(
-      `\n========== FIN DIAGNOSTIC ${client} ==========\n`
+      '\n========== DIAGNOSTIC ' +
+        client +
+        ' ==========\n'
     );
 
+    if (
+      listResult.stdout
+    ) {
+      console.log(
+        listResult.stdout
+      );
+    }
+
+    if (
+      listResult.stderr
+    ) {
+      console.error(
+        listResult.stderr
+      );
+    }
+
     console.log(
-      combinedOutput
+      '\n========== FIN DIAGNOSTIC ' +
+        client +
+        ' ==========\n'
     );
 
     // --------------------------------------------------------
-    // 2. VÉRIFICATION FORMATS
+    // FORMATS DISPONIBLES ?
     // --------------------------------------------------------
 
     const formatsAvailable =
@@ -546,43 +565,43 @@ async function downloadWithYtDlp(
 
     if (!formatsAvailable) {
       console.log(
-        `❌ Aucun format exploitable avec ${client}.`
+        '❌ Aucun format exploitable avec ' +
+          client
       );
 
       continue;
     }
 
     console.log(
-      `✅ Formats disponibles avec ${client}.`
+      '✅ Formats disponibles avec ' +
+        client
     );
 
     // --------------------------------------------------------
-    // 3. TÉLÉCHARGEMENT
+    // TÉLÉCHARGEMENT
     // --------------------------------------------------------
 
     const downloadArgs = [
       '-m',
       'yt_dlp',
 
-      // URL
       cleanUrl,
 
-      // Fichier de sortie
       '--output',
       destPath,
 
-      // FFmpeg
       '--ffmpeg-location',
       ffmpegPath,
 
-      // Arguments communs
       ...buildCommonArgs(
         client
       ),
     ];
 
     console.log(
-      `\n🚀 Tentative de téléchargement avec le client ${client}...`
+      '\n🚀 Téléchargement avec ' +
+        client +
+        '...\n'
     );
 
     const downloadResult =
@@ -593,23 +612,27 @@ async function downloadWithYtDlp(
     lastResult =
       downloadResult;
 
+    // --------------------------------------------------------
+    // ÉCHEC
+    // --------------------------------------------------------
+
     if (
       downloadResult.code !== 0
     ) {
       console.error(
-        `❌ Échec téléchargement avec ${client}.`
+        '❌ Échec téléchargement avec ' +
+          client
       );
 
       console.error(
         downloadResult.stderr
       );
 
-      // On passe au client suivant
       continue;
     }
 
     // --------------------------------------------------------
-    // 4. FICHIER EXACT
+    // FICHIER EXACT
     // --------------------------------------------------------
 
     if (
@@ -626,7 +649,7 @@ async function downloadWithYtDlp(
     }
 
     // --------------------------------------------------------
-    // 5. RECHERCHE EXTENSION DIFFÉRENTE
+    // EXTENSION DIFFÉRENTE
     // --------------------------------------------------------
 
     const directory =
@@ -671,7 +694,8 @@ async function downloadWithYtDlp(
     }
 
     console.error(
-      `❌ yt-dlp a terminé avec ${client}, mais le fichier est introuvable.`
+      '❌ Fichier vidéo introuvable après téléchargement avec ' +
+        client
     );
   }
 
@@ -697,7 +721,7 @@ async function downloadWithYtDlp(
 
   throw new Error(
     'yt-dlp n’a trouvé aucun format exploitable ou le téléchargement a échoué.' +
-      '\n\n--- Dernier diagnostic ---\n' +
+      '\n\n--- Diagnostic ---\n' +
       diagnostic
   );
 }
@@ -1040,7 +1064,7 @@ router.post(
         });
     } finally {
       // ======================================================
-      // NETTOYAGE
+      // NETTOYAGE FICHIERS TEMPORAIRES
       // ======================================================
 
       for (
@@ -1075,62 +1099,12 @@ module.exports.transcribeAudio =
   transcribeAudio;
 ```
 
-### Ce que cette version va faire
-
-Pour ton URL :
+**Après avoir remplacé le fichier**, vérifie bien que la recherche de :
 
 ```text
-https://www.youtube.com/watch?v=60gpH_Qlgt8
+`youtube:player_client=
 ```
 
-elle va maintenant essayer :
+ne retourne plus rien dans `transcribe.js`.
 
-```text
-TEST CLIENT YOUTUBE: mweb
-        ↓
---list-formats
-        ↓
-formats disponibles ?
-        ↓
-oui → téléchargement
-non → tv
-        ↓
-TEST CLIENT YOUTUBE: tv
-        ↓
---list-formats
-        ↓
-formats disponibles ?
-        ↓
-oui → téléchargement
-non → web
-        ↓
-TEST CLIENT YOUTUBE: web
-```
-
-Et surtout, **il n'y a plus `--format best`**.
-
-Le premier test après déploiement est important : regarde le log Railway et cherche :
-
-```text
-TEST CLIENT YOUTUBE: mweb
-```
-
-puis :
-
-```text
-TEST CLIENT YOUTUBE: tv
-```
-
-et :
-
-```text
-TEST CLIENT YOUTUBE: web
-```
-
-Si les trois donnent encore :
-
-```text
-The page needs to be reloaded.
-```
-
-alors le problème sera au niveau de l'extraction YouTube/PO Token plutôt qu'au niveau du choix du format.
+Ensuite commit/push et laisse Railway redéployer. Le `SyntaxError` devrait disparaître ; le prochain log intéressant sera celui des tests **mweb → tv → web**.
