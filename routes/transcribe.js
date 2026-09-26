@@ -1,4 +1,4 @@
-```js
+```text
 const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
@@ -14,7 +14,16 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const router = express.Router();
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+// ============================================================
+// UPLOADS
+// ============================================================
+
+const UPLOADS_DIR = path.join(
+  __dirname,
+  '..',
+  'uploads'
+);
+
 fs.ensureDirSync(UPLOADS_DIR);
 
 const upload = multer({
@@ -34,14 +43,17 @@ const PYTHON_BIN_PATH_FILE = path.join(
 function getPythonBin() {
   try {
     const content = fs
-      .readFileSync(PYTHON_BIN_PATH_FILE, 'utf8')
+      .readFileSync(
+        PYTHON_BIN_PATH_FILE,
+        'utf8'
+      )
       .trim();
 
     if (content) {
       return content;
     }
   } catch {
-    // fallback
+    // Fallback
   }
 
   return 'python3';
@@ -58,7 +70,7 @@ const PLUGIN_DIR = path.join(
 );
 
 // ============================================================
-// PLATEFORMES
+// PLATEFORMES SUPPORTÉES
 // ============================================================
 
 const PLATFORM_HOSTS = [
@@ -72,7 +84,10 @@ const PLATFORM_HOSTS = [
 
 function isPlatformUrl(url) {
   try {
-    const host = new URL(url).hostname.toLowerCase();
+    const host =
+      new URL(url)
+        .hostname
+        .toLowerCase();
 
     return PLATFORM_HOSTS.some(
       (platform) =>
@@ -92,15 +107,20 @@ function cleanYoutubeUrl(url) {
   try {
     const parsed = new URL(url);
 
-    const hostname = parsed.hostname.toLowerCase();
+    const hostname =
+      parsed.hostname.toLowerCase();
 
-    // YouTube
+    // --------------------------------------------------------
+    // youtube.com / m.youtube.com
+    // --------------------------------------------------------
+
     if (
       hostname === 'youtube.com' ||
       hostname === 'www.youtube.com' ||
       hostname === 'm.youtube.com'
     ) {
-      const videoId = parsed.searchParams.get('v');
+      const videoId =
+        parsed.searchParams.get('v');
 
       if (videoId) {
         return (
@@ -110,14 +130,18 @@ function cleanYoutubeUrl(url) {
       }
     }
 
+    // --------------------------------------------------------
     // youtu.be
+    // --------------------------------------------------------
+
     if (
       hostname === 'youtu.be' ||
       hostname === 'www.youtu.be'
     ) {
-      const videoId = parsed.pathname
-        .replace(/^\/+/, '')
-        .split('/')[0];
+      const videoId =
+        parsed.pathname
+          .replace(/^\/+/, '')
+          .split('/')[0];
 
       if (videoId) {
         return (
@@ -140,7 +164,9 @@ function cleanYoutubeUrl(url) {
 let cachedCookiesPath = null;
 
 function getCookiesFilePath() {
-  if (!process.env.YOUTUBE_COOKIES_BASE64) {
+  if (
+    !process.env.YOUTUBE_COOKIES_BASE64
+  ) {
     console.log(
       'YOUTUBE_COOKIES_BASE64 non configuré.'
     );
@@ -158,17 +184,19 @@ function getCookiesFilePath() {
   );
 
   try {
-    const content = Buffer.from(
-      process.env.YOUTUBE_COOKIES_BASE64,
-      'base64'
-    ).toString('utf8');
+    const content =
+      Buffer.from(
+        process.env.YOUTUBE_COOKIES_BASE64,
+        'base64'
+      ).toString('utf8');
 
     fs.writeFileSync(
       filePath,
       content
     );
 
-    cachedCookiesPath = filePath;
+    cachedCookiesPath =
+      filePath;
 
     console.log(
       'Cookies YouTube préparés.'
@@ -199,10 +227,12 @@ console.log(
 );
 
 // ============================================================
-// ARGUMENTS COMMUNS YT-DLP
+// ARGUMENTS YT-DLP
 // ============================================================
 
-function buildCommonArgs(playerClient) {
+function buildCommonArgs(
+  playerClient
+) {
   if (!playerClient) {
     playerClient = 'mweb';
   }
@@ -241,7 +271,7 @@ function buildCommonArgs(playerClient) {
 }
 
 // ============================================================
-// EXECUTION YT-DLP
+// EXÉCUTER YT-DLP
 // ============================================================
 
 function runYtDlp(args) {
@@ -291,7 +321,7 @@ function runYtDlp(args) {
 
           console.log(
             '[yt-dlp stdout] ' +
-              text.trim()
+            text.trim()
           );
         }
       );
@@ -306,14 +336,16 @@ function runYtDlp(args) {
 
           console.error(
             '[yt-dlp stderr] ' +
-              text.trim()
+            text.trim()
           );
         }
       );
 
       proc.on(
         'error',
-        reject
+        (error) => {
+          reject(error);
+        }
       );
 
       proc.on(
@@ -321,7 +353,7 @@ function runYtDlp(args) {
         (code) => {
           console.log(
             'yt-dlp terminé avec le code ' +
-              code
+            code
           );
 
           resolve({
@@ -336,10 +368,12 @@ function runYtDlp(args) {
 }
 
 // ============================================================
-// VÉRIFICATION DES FORMATS
+// VÉRIFIER LES FORMATS RÉELLEMENT EXPLOITABLES
 // ============================================================
 
-function hasUsableFormats(stdout) {
+function hasUsableFormats(
+  stdout
+) {
   if (!stdout) {
     return false;
   }
@@ -358,7 +392,9 @@ function hasUsableFormats(stdout) {
     'wav',
   ];
 
-  for (const line of lines) {
+  for (
+    const line of lines
+  ) {
     const trimmed =
       line.trim();
 
@@ -389,7 +425,8 @@ function hasUsableFormats(stdout) {
       continue;
     }
 
-    // Storyboards YouTube
+    // Storyboards YouTube :
+    // sb0, sb1, sb2, sb3
     if (
       /^sb\d+\s+/i.test(
         trimmed
@@ -410,7 +447,7 @@ function hasUsableFormats(stdout) {
     const ext =
       match[2].toLowerCase();
 
-    // Storyboard mhtml
+    // Storyboard
     if (ext === 'mhtml') {
       continue;
     }
@@ -445,7 +482,7 @@ async function downloadWithYtDlp(
 
   console.log(
     'URL originale: ' +
-      url
+    url
   );
 
   console.log(
@@ -458,17 +495,13 @@ async function downloadWithYtDlp(
   if (cleanUrl !== url) {
     console.log(
       'URL YouTube nettoyée: ' +
-        cleanUrl
+      cleanUrl
     );
   }
 
-  // On teste plusieurs clients.
-  //
-  // mweb peut parfois ne retourner que
-  // les storyboards.
-  //
-  // Dans ce cas on passe automatiquement
-  // à tv puis web.
+  // ========================================================
+  // CLIENTS TESTÉS
+  // ========================================================
 
   const clients = [
     'mweb',
@@ -477,6 +510,10 @@ async function downloadWithYtDlp(
   ];
 
   let lastResult = null;
+
+  // ========================================================
+  // TEST DES CLIENTS
+  // ========================================================
 
   for (
     const client of clients
@@ -487,16 +524,16 @@ async function downloadWithYtDlp(
 
     console.log(
       'TEST CLIENT YOUTUBE: ' +
-        client
+      client
     );
 
     console.log(
       '========================================\n'
     );
 
-    // --------------------------------------------------------
-    // 1. DIAGNOSTIC --list-formats
-    // --------------------------------------------------------
+    // ------------------------------------------------------
+    // DIAGNOSTIC --list-formats
+    // ------------------------------------------------------
 
     const listArgs = [
       '-m',
@@ -528,8 +565,8 @@ async function downloadWithYtDlp(
 
     console.log(
       '\n========== DIAGNOSTIC ' +
-        client +
-        ' ==========\n'
+      client +
+      ' ==========\n'
     );
 
     if (
@@ -550,13 +587,13 @@ async function downloadWithYtDlp(
 
     console.log(
       '\n========== FIN DIAGNOSTIC ' +
-        client +
-        ' ==========\n'
+      client +
+      ' ==========\n'
     );
 
-    // --------------------------------------------------------
-    // 2. VÉRIFICATION
-    // --------------------------------------------------------
+    // ------------------------------------------------------
+    // VÉRIFIER FORMATS
+    // ------------------------------------------------------
 
     const formatsAvailable =
       listResult.code === 0 &&
@@ -569,7 +606,7 @@ async function downloadWithYtDlp(
     ) {
       console.log(
         '❌ Aucun format vidéo/audio exploitable avec ' +
-          client
+        client
       );
 
       console.log(
@@ -581,12 +618,12 @@ async function downloadWithYtDlp(
 
     console.log(
       '✅ Formats exploitables avec ' +
-        client
+      client
     );
 
-    // --------------------------------------------------------
-    // 3. TÉLÉCHARGEMENT
-    // --------------------------------------------------------
+    // ------------------------------------------------------
+    // TÉLÉCHARGEMENT
+    // ------------------------------------------------------
 
     const downloadArgs = [
       '-m',
@@ -597,8 +634,6 @@ async function downloadWithYtDlp(
       '--output',
       destPath,
 
-      // On laisse yt-dlp choisir le meilleur
-      // format vidéo/audio réellement disponible.
       '--format',
       'best',
 
@@ -612,8 +647,8 @@ async function downloadWithYtDlp(
 
     console.log(
       '\n🚀 Téléchargement avec ' +
-        client +
-        '...\n'
+      client +
+      '...\n'
     );
 
     const downloadResult =
@@ -624,16 +659,16 @@ async function downloadWithYtDlp(
     lastResult =
       downloadResult;
 
-    // --------------------------------------------------------
-    // 4. ÉCHEC
-    // --------------------------------------------------------
+    // ------------------------------------------------------
+    // ÉCHEC DU TÉLÉCHARGEMENT
+    // ------------------------------------------------------
 
     if (
       downloadResult.code !== 0
     ) {
       console.error(
         '❌ Échec téléchargement avec ' +
-          client
+        client
       );
 
       console.error(
@@ -647,9 +682,9 @@ async function downloadWithYtDlp(
       continue;
     }
 
-    // --------------------------------------------------------
-    // 5. FICHIER TROUVÉ
-    // --------------------------------------------------------
+    // ------------------------------------------------------
+    // FICHIER EXACT
+    // ------------------------------------------------------
 
     if (
       await fs.pathExists(
@@ -658,14 +693,15 @@ async function downloadWithYtDlp(
     ) {
       console.log(
         '✅ Vidéo téléchargée: ' +
-          destPath
+        destPath
       );
 
       return destPath;
     }
 
-    // yt-dlp peut modifier
-    // légèrement le nom du fichier.
+    // ------------------------------------------------------
+    // FICHIER AVEC EXTENSION MODIFIÉE
+    // ------------------------------------------------------
 
     const directory =
       path.dirname(
@@ -702,7 +738,7 @@ async function downloadWithYtDlp(
 
       console.log(
         '✅ Vidéo trouvée: ' +
-          finalPath
+        finalPath
       );
 
       return finalPath;
@@ -710,7 +746,7 @@ async function downloadWithYtDlp(
 
     console.error(
       '❌ Fichier vidéo introuvable après téléchargement avec ' +
-        client
+      client
     );
   }
 
@@ -734,8 +770,8 @@ async function downloadWithYtDlp(
 
   throw new Error(
     'yt-dlp n’a trouvé aucun format vidéo/audio exploitable avec les clients mweb, tv ou web.' +
-      '\n\n--- Diagnostic ---\n' +
-      diagnostic
+    '\n\n--- Diagnostic ---\n' +
+    diagnostic
   );
 }
 
@@ -749,7 +785,7 @@ async function downloadDirect(
 ) {
   console.log(
     'Téléchargement direct: ' +
-      url
+    url
   );
 
   const response =
@@ -777,7 +813,7 @@ async function downloadDirect(
         () => {
           console.log(
             'Téléchargement direct terminé: ' +
-              destPath
+            destPath
           );
 
           resolve(
@@ -800,7 +836,7 @@ async function downloadDirect(
 }
 
 // ============================================================
-// CHOIX DU TÉLÉCHARGEMENT
+// DOWNLOAD VIDEO
 // ============================================================
 
 async function downloadVideo(
@@ -834,7 +870,7 @@ function extractAudio(
     (resolve, reject) => {
       console.log(
         'Extraction audio: ' +
-          videoPath
+        videoPath
       );
 
       ffmpeg(videoPath)
@@ -864,13 +900,15 @@ function extractAudio(
             reject(error);
           }
         )
-        .save(audioPath);
+        .save(
+          audioPath
+        );
     }
   );
 }
 
 // ============================================================
-// TRANSCRIPTION WHISPER
+// TRANSCRIPTION OPENAI WHISPER
 // ============================================================
 
 async function transcribeAudio(
@@ -917,7 +955,6 @@ async function transcribeAudio(
       form,
       {
         headers,
-
         maxBodyLength:
           Infinity,
       }
@@ -957,7 +994,7 @@ router.post(
 
         console.log(
           'Vidéo reçue: ' +
-            videoPath
+          videoPath
         );
       }
 
@@ -973,8 +1010,8 @@ router.post(
           path.join(
             UPLOADS_DIR,
             'src_' +
-              Date.now() +
-              '.mp4'
+            Date.now() +
+            '.mp4'
           );
 
         videoPath =
@@ -989,7 +1026,7 @@ router.post(
       }
 
       // ------------------------------------------------------
-      // RIEN
+      // AUCUNE SOURCE
       // ------------------------------------------------------
 
       else {
@@ -1009,8 +1046,8 @@ router.post(
         path.join(
           UPLOADS_DIR,
           'audio_' +
-            Date.now() +
-            '.mp3'
+          Date.now() +
+          '.mp3'
         );
 
       tmpFiles.push(
@@ -1044,11 +1081,12 @@ router.post(
     } catch (error) {
       console.error(
         'Erreur transcription:',
+
         (
           error.response &&
           error.response.data
         ) ||
-          error.message
+        error.message
       );
 
       return res
@@ -1065,7 +1103,7 @@ router.post(
         });
     } finally {
       // ------------------------------------------------------
-      // NETTOYAGE
+      // NETTOYAGE FICHIERS TEMPORAIRES
       // ------------------------------------------------------
 
       for (
@@ -1076,7 +1114,7 @@ router.post(
             file
           );
         } catch {
-          // ignore
+          // Ignorer les erreurs
         }
       }
     }
