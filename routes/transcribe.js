@@ -1,3 +1,4 @@
+```js
 const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
@@ -16,32 +17,48 @@ const router = express.Router();
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 fs.ensureDirSync(UPLOADS_DIR);
 
-const upload = multer({ dest: UPLOADS_DIR });
+const upload = multer({
+  dest: UPLOADS_DIR,
+});
 
 // ============================================================
 // PYTHON / yt-dlp
 // ============================================================
 
-// Emplacement du fichier écrit par install-bgutil.sh,
-// contenant le chemin EXACT du python3 utilisé pour installer yt-dlp.
-const PYTHON_BIN_PATH_FILE = path.join(__dirname, '..', 'python-bin-path.txt');
+const PYTHON_BIN_PATH_FILE = path.join(
+  __dirname,
+  '..',
+  'python-bin-path.txt'
+);
 
 function getPythonBin() {
   try {
-    const content = fs.readFileSync(PYTHON_BIN_PATH_FILE, 'utf8').trim();
+    const content = fs
+      .readFileSync(
+        PYTHON_BIN_PATH_FILE,
+        'utf8'
+      )
+      .trim();
 
     if (content) {
       return content;
     }
   } catch {
-    // Fichier absent : on retombe sur python3 générique.
+    // Fichier absent : python3 générique
   }
 
   return 'python3';
 }
 
-// Dossier où install-bgutil.sh a copié le plugin.
-const PLUGIN_DIR = path.join(__dirname, '..', 'yt-dlp-plugins');
+// ============================================================
+// PLUGIN yt-dlp / BGUTIL
+// ============================================================
+
+const PLUGIN_DIR = path.join(
+  __dirname,
+  '..',
+  'yt-dlp-plugins'
+);
 
 // ============================================================
 // PLATEFORMES
@@ -58,7 +75,9 @@ const PLATFORM_HOSTS = [
 
 function isPlatformUrl(url) {
   try {
-    const host = new URL(url).hostname.toLowerCase();
+    const host = new URL(url)
+      .hostname
+      .toLowerCase();
 
     return PLATFORM_HOSTS.some(
       (platform) =>
@@ -74,49 +93,51 @@ function isPlatformUrl(url) {
 // NETTOYAGE URL YOUTUBE
 // ============================================================
 
-// Transforme par exemple :
-//
-// https://m.youtube.com/watch?v=60gpH_Qlgt8&pp=xxxx
-//
-// en :
-//
-// https://www.youtube.com/watch?v=60gpH_Qlgt8
-//
-// On supprime ainsi les paramètres inutiles comme pp=...
 function cleanYoutubeUrl(url) {
   try {
     const parsed = new URL(url);
 
-    const hostname = parsed.hostname.toLowerCase();
+    const hostname =
+      parsed.hostname.toLowerCase();
 
     // --------------------------------------------------------
-    // youtube.com / www.youtube.com / m.youtube.com
+    // youtube.com
     // --------------------------------------------------------
+
     if (
       hostname === 'youtube.com' ||
       hostname === 'www.youtube.com' ||
       hostname === 'm.youtube.com'
     ) {
-      const videoId = parsed.searchParams.get('v');
+      const videoId =
+        parsed.searchParams.get('v');
 
       if (videoId) {
-        return `https://www.youtube.com/watch?v=${videoId}`;
+        return (
+          'https://www.youtube.com/watch?v=' +
+          videoId
+        );
       }
     }
 
     // --------------------------------------------------------
     // youtu.be
     // --------------------------------------------------------
+
     if (
       hostname === 'youtu.be' ||
       hostname === 'www.youtu.be'
     ) {
-      const videoId = parsed.pathname
-        .replace(/^\/+/, '')
-        .split('/')[0];
+      const videoId =
+        parsed.pathname
+          .replace(/^\/+/, '')
+          .split('/')[0];
 
       if (videoId) {
-        return `https://www.youtube.com/watch?v=${videoId}`;
+        return (
+          'https://www.youtube.com/watch?v=' +
+          videoId
+        );
       }
     }
 
@@ -133,8 +154,13 @@ function cleanYoutubeUrl(url) {
 let cachedCookiesPath = null;
 
 function getCookiesFilePath() {
-  if (!process.env.YOUTUBE_COOKIES_BASE64) {
-    console.log('YOUTUBE_COOKIES_BASE64 non configuré.');
+  if (
+    !process.env.YOUTUBE_COOKIES_BASE64
+  ) {
+    console.log(
+      'YOUTUBE_COOKIES_BASE64 non configuré.'
+    );
+
     return null;
   }
 
@@ -142,18 +168,29 @@ function getCookiesFilePath() {
     return cachedCookiesPath;
   }
 
-  const filePath = path.join(os.tmpdir(), 'yt-cookies.txt');
+  const filePath = path.join(
+    os.tmpdir(),
+    'yt-cookies.txt'
+  );
 
   try {
     const content = Buffer
-      .from(process.env.YOUTUBE_COOKIES_BASE64, 'base64')
+      .from(
+        process.env.YOUTUBE_COOKIES_BASE64,
+        'base64'
+      )
       .toString('utf8');
 
-    fs.writeFileSync(filePath, content);
+    fs.writeFileSync(
+      filePath,
+      content
+    );
 
     cachedCookiesPath = filePath;
 
-    console.log('Cookies YouTube préparés.');
+    console.log(
+      'Cookies YouTube préparés.'
+    );
 
     return filePath;
   } catch (error) {
@@ -174,25 +211,33 @@ const BGUTIL_BASE_URL =
   process.env.BGUTIL_BASE_URL ||
   'http://127.0.0.1:4416';
 
-console.log('BgUtils URL: ' + BGUTIL_BASE_URL);
+console.log(
+  'BgUtils URL: ' +
+    BGUTIL_BASE_URL
+);
 
 // ============================================================
 // ARGUMENTS COMMUNS yt-dlp
 // ============================================================
 
-function buildCommonArgs() {
+function buildCommonArgs(
+  playerClient = 'mweb'
+) {
   const args = [
     '--no-playlist',
 
     '--extractor-args',
 
-    // IMPORTANT :
-    // On teste maintenant web + mweb.
+    // --------------------------------------------------------
+    // Un seul client YouTube à la fois.
     //
-    // Le précédent mweb ne retournait que les storyboards sb0-sb3.
+    // Cela permet de tester précisément :
+    // mweb → tv → web
     //
-    'youtube:player_client=tv,web,mweb;youtubepot-bgutilhttp:base_url=' +
-  BGUTIL_BASE_URL,
+    // avec le plugin BGUTIL PO Token.
+    // --------------------------------------------------------
+
+    `youtube:player_client=${playerClient};youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
 
     '--no-check-certificates',
 
@@ -202,10 +247,14 @@ function buildCommonArgs() {
     PLUGIN_DIR,
   ];
 
-  const cookiesPath = getCookiesFilePath();
+  const cookiesPath =
+    getCookiesFilePath();
 
   if (cookiesPath) {
-    args.push('--cookies', cookiesPath);
+    args.push(
+      '--cookies',
+      cookiesPath
+    );
   }
 
   return args;
@@ -216,76 +265,190 @@ function buildCommonArgs() {
 // ============================================================
 
 function runYtDlp(args) {
-  return new Promise((resolve, reject) => {
-    console.log(
-      'Commande: ' +
-        getPythonBin() +
-        ' ' +
-        args.join(' ')
-    );
-
-    const proc = spawn(
-      getPythonBin(),
-      args,
-      {
-        env: {
-          ...process.env,
-        },
-      }
-    );
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => {
-      const text = data.toString();
-
-      stdout += text;
+  return new Promise(
+    (resolve, reject) => {
+      console.log(
+        '\n----------------------------------------'
+      );
 
       console.log(
-        '[yt-dlp] ' +
-          text.trim()
+        'Commande yt-dlp:'
       );
-    });
 
-    proc.stderr.on('data', (data) => {
-      const text = data.toString();
-
-      stderr += text;
-
-      console.error(
-        '[yt-dlp] ' +
-          text.trim()
+      console.log(
+        getPythonBin() +
+          ' ' +
+          args.join(' ')
       );
-    });
 
-    proc.on('error', reject);
+      console.log(
+        '----------------------------------------\n'
+      );
 
-    proc.on('close', (code) => {
-      resolve({
-        code,
-        stdout,
-        stderr,
-      });
-    });
-  });
+      const proc = spawn(
+        getPythonBin(),
+        args,
+        {
+          env: {
+            ...process.env,
+          },
+        }
+      );
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on(
+        'data',
+        (data) => {
+          const text =
+            data.toString();
+
+          stdout += text;
+
+          console.log(
+            '[yt-dlp stdout] ' +
+              text.trim()
+          );
+        }
+      );
+
+      proc.stderr.on(
+        'data',
+        (data) => {
+          const text =
+            data.toString();
+
+          stderr += text;
+
+          console.error(
+            '[yt-dlp stderr] ' +
+              text.trim()
+          );
+        }
+      );
+
+      proc.on(
+        'error',
+        (error) => {
+          reject(error);
+        }
+      );
+
+      proc.on(
+        'close',
+        (code) => {
+          console.log(
+            `yt-dlp terminé avec le code ${code}`
+          );
+
+          resolve({
+            code,
+            stdout,
+            stderr,
+          });
+        }
+      );
+    }
+  );
+}
+
+// ============================================================
+// DÉTECTION DES FORMATS
+// ============================================================
+
+function hasUsableFormats(
+  stdout
+) {
+  if (!stdout) {
+    return false;
+  }
+
+  // yt-dlp affiche généralement :
+  //
+  // ID  EXT  RESOLUTION ...
+  //
+  // puis des lignes comme :
+  //
+  // 18  mp4  360p ...
+  //
+  // 137 mp4  1080p ...
+  //
+  // 140 m4a  audio only ...
+  //
+
+  const lines =
+    stdout.split('\n');
+
+  for (const line of lines) {
+    const trimmed =
+      line.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    // Ignore l'en-tête
+    if (
+      /^ID\s+EXT\s+/i.test(
+        trimmed
+      )
+    ) {
+      continue;
+    }
+
+    // Ignore les lignes décoratives
+    if (
+      trimmed.startsWith('[') ||
+      trimmed.startsWith('-')
+    ) {
+      continue;
+    }
+
+    // Recherche d'une ligne de format
+    if (
+      /^\d+\s+\w+\s+/i.test(
+        trimmed
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // ============================================================
 // TÉLÉCHARGEMENT YOUTUBE / TIKTOK
 // ============================================================
 
-async function downloadWithYtDlp(url, destPath) {
+async function downloadWithYtDlp(
+  url,
+  destPath
+) {
   console.log(
-    'Téléchargement avec yt-dlp Python: ' +
+    '\n========================================'
+  );
+
+  console.log(
+    'Téléchargement avec yt-dlp Python'
+  );
+
+  console.log(
+    'URL originale: ' +
       url
   );
 
+  console.log(
+    '========================================\n'
+  );
+
   // ----------------------------------------------------------
-  // Nettoyage de l'URL uniquement pour YouTube
+  // Nettoyage URL YouTube
   // ----------------------------------------------------------
 
-  const cleanUrl = cleanYoutubeUrl(url);
+  const cleanUrl =
+    cleanYoutubeUrl(url);
 
   if (cleanUrl !== url) {
     console.log(
@@ -294,123 +457,248 @@ async function downloadWithYtDlp(url, destPath) {
     );
   }
 
-  const commonArgs = buildCommonArgs();
-
   // ----------------------------------------------------------
-  // IMPORTANT :
-  // Aucun --format best ici.
-  //
-  // On laisse yt-dlp choisir les formats réellement
-  // disponibles.
+  // CLIENTS YOUTUBE À TESTER
   // ----------------------------------------------------------
 
-  const downloadArgs = [
-    '-m',
-    'yt_dlp',
-
-    cleanUrl,
-
-    '--output',
-    destPath,
-
-    '--ffmpeg-location',
-    ffmpegPath,
-
-    ...commonArgs,
+  const clients = [
+    'mweb',
+    'tv',
+    'web',
   ];
 
-  const result = await runYtDlp(downloadArgs);
+  let lastResult = null;
 
-  // ----------------------------------------------------------
-  // DIAGNOSTIC
-  // ----------------------------------------------------------
+  // ==========================================================
+  // TEST SUCCESSIF
+  // ==========================================================
 
-  if (result.code !== 0) {
+  for (const client of clients) {
     console.log(
-      'Échec du téléchargement — lancement du diagnostic --list-formats...'
+      '\n\n========================================'
     );
+
+    console.log(
+      `TEST CLIENT YOUTUBE: ${client}`
+    );
+
+    console.log(
+      '========================================\n'
+    );
+
+    // --------------------------------------------------------
+    // 1. DIAGNOSTIC --list-formats
+    // --------------------------------------------------------
 
     const listArgs = [
       '-m',
       'yt_dlp',
 
-      cleanUrl,
-
       '--list-formats',
 
-      ...commonArgs,
+      ...buildCommonArgs(
+        client
+      ),
+
+      cleanUrl,
     ];
 
-    const listResult = await runYtDlp(
-      listArgs
-    ).catch((e) => ({
-      stdout: '',
-      stderr: e.message,
-    }));
+    const listResult =
+      await runYtDlp(
+        listArgs
+      ).catch((error) => ({
+        code: 1,
+        stdout: '',
+        stderr:
+          error.message,
+      }));
 
-    throw new Error(
-      'yt-dlp a échoué : ' +
-        result.stderr +
-        '\n--- Diagnostic --list-formats ---\n' +
-        (listResult.stdout ||
-          '(aucune sortie)') +
-        (
-          listResult.stderr
-            ? '\n' + listResult.stderr
-            : ''
-        )
-    );
-  }
+    lastResult =
+      listResult;
 
-  // ----------------------------------------------------------
-  // Fichier exactement demandé
-  // ----------------------------------------------------------
+    const combinedOutput =
+      (
+        listResult.stdout ||
+        ''
+      ) +
+      (
+        listResult.stderr ||
+        ''
+      );
 
-  if (await fs.pathExists(destPath)) {
     console.log(
-      'Vidéo téléchargée: ' +
+      `\n========== FIN DIAGNOSTIC ${client} ==========\n`
+    );
+
+    console.log(
+      combinedOutput
+    );
+
+    // --------------------------------------------------------
+    // 2. VÉRIFICATION FORMATS
+    // --------------------------------------------------------
+
+    const formatsAvailable =
+      listResult.code === 0 &&
+      hasUsableFormats(
+        listResult.stdout
+      );
+
+    if (!formatsAvailable) {
+      console.log(
+        `❌ Aucun format exploitable avec ${client}.`
+      );
+
+      continue;
+    }
+
+    console.log(
+      `✅ Formats disponibles avec ${client}.`
+    );
+
+    // --------------------------------------------------------
+    // 3. TÉLÉCHARGEMENT
+    // --------------------------------------------------------
+
+    const downloadArgs = [
+      '-m',
+      'yt_dlp',
+
+      // URL
+      cleanUrl,
+
+      // Fichier de sortie
+      '--output',
+      destPath,
+
+      // FFmpeg
+      '--ffmpeg-location',
+      ffmpegPath,
+
+      // Arguments communs
+      ...buildCommonArgs(
+        client
+      ),
+    ];
+
+    console.log(
+      `\n🚀 Tentative de téléchargement avec le client ${client}...`
+    );
+
+    const downloadResult =
+      await runYtDlp(
+        downloadArgs
+      );
+
+    lastResult =
+      downloadResult;
+
+    if (
+      downloadResult.code !== 0
+    ) {
+      console.error(
+        `❌ Échec téléchargement avec ${client}.`
+      );
+
+      console.error(
+        downloadResult.stderr
+      );
+
+      // On passe au client suivant
+      continue;
+    }
+
+    // --------------------------------------------------------
+    // 4. FICHIER EXACT
+    // --------------------------------------------------------
+
+    if (
+      await fs.pathExists(
         destPath
-    );
+      )
+    ) {
+      console.log(
+        '✅ Vidéo téléchargée: ' +
+          destPath
+      );
 
-    return destPath;
+      return destPath;
+    }
+
+    // --------------------------------------------------------
+    // 5. RECHERCHE EXTENSION DIFFÉRENTE
+    // --------------------------------------------------------
+
+    const directory =
+      path.dirname(
+        destPath
+      );
+
+    const baseName =
+      path.basename(
+        destPath,
+        path.extname(
+          destPath
+        )
+      );
+
+    const files =
+      await fs.readdir(
+        directory
+      );
+
+    const match =
+      files.find(
+        (file) =>
+          file.startsWith(
+            baseName
+          )
+      );
+
+    if (match) {
+      const finalPath =
+        path.join(
+          directory,
+          match
+        );
+
+      console.log(
+        '✅ Vidéo trouvée: ' +
+          finalPath
+      );
+
+      return finalPath;
+    }
+
+    console.error(
+      `❌ yt-dlp a terminé avec ${client}, mais le fichier est introuvable.`
+    );
   }
 
-  // ----------------------------------------------------------
-  // Recherche si yt-dlp a utilisé une extension différente
-  // ----------------------------------------------------------
+  // ==========================================================
+  // TOUS LES CLIENTS ONT ÉCHOUÉ
+  // ==========================================================
 
-  const directory = path.dirname(destPath);
+  let diagnostic = '';
 
-  const baseName = path.basename(
-    destPath,
-    path.extname(destPath)
-  );
-
-  const files = await fs.readdir(
-    directory
-  );
-
-  const match = files.find(
-    (file) =>
-      file.startsWith(baseName)
-  );
-
-  if (match) {
-    const finalPath = path.join(
-      directory,
-      match
-    );
-
-    console.log(
-      'Vidéo trouvée: ' +
-        finalPath
-    );
-
-    return finalPath;
+  if (lastResult) {
+    diagnostic =
+      (
+        lastResult.stdout ||
+        ''
+      ) +
+      (
+        lastResult.stderr
+          ? '\n' +
+            lastResult.stderr
+          : ''
+      );
   }
 
   throw new Error(
-    'yt-dlp: fichier vidéo introuvable après téléchargement.'
+    'yt-dlp n’a trouvé aucun format exploitable ou le téléchargement a échoué.' +
+      '\n\n--- Dernier diagnostic ---\n' +
+      diagnostic
   );
 }
 
@@ -427,22 +715,29 @@ async function downloadDirect(
       url
   );
 
-  const response = await axios.get(
-    url,
-    {
-      responseType: 'stream',
-    }
-  );
+  const response =
+    await axios.get(
+      url,
+      {
+        responseType:
+          'stream',
+      }
+    );
 
   const writer =
     fs.createWriteStream(
       destPath
     );
 
-  response.data.pipe(writer);
+  response.data.pipe(
+    writer
+  );
 
   return new Promise(
-    (resolve, reject) => {
+    (
+      resolve,
+      reject
+    ) => {
       writer.on(
         'finish',
         () => {
@@ -451,7 +746,9 @@ async function downloadDirect(
               destPath
           );
 
-          resolve(destPath);
+          resolve(
+            destPath
+          );
         }
       );
 
@@ -476,7 +773,9 @@ async function downloadVideo(
   url,
   destPath
 ) {
-  if (isPlatformUrl(url)) {
+  if (
+    isPlatformUrl(url)
+  ) {
     return downloadWithYtDlp(
       url,
       destPath
@@ -498,7 +797,10 @@ function extractAudio(
   audioPath
 ) {
   return new Promise(
-    (resolve, reject) => {
+    (
+      resolve,
+      reject
+    ) => {
       console.log(
         'Extraction audio: ' +
           videoPath
@@ -506,24 +808,34 @@ function extractAudio(
 
       ffmpeg(videoPath)
         .noVideo()
-        .audioCodec('libmp3lame')
+        .audioCodec(
+          'libmp3lame'
+        )
         .format('mp3')
-        .on('end', () => {
-          console.log(
-            'Extraction audio terminée.'
-          );
+        .on(
+          'end',
+          () => {
+            console.log(
+              'Extraction audio terminée.'
+            );
 
-          resolve();
-        })
-        .on('error', (error) => {
-          console.error(
-            'Erreur FFmpeg:',
-            error.message
-          );
+            resolve();
+          }
+        )
+        .on(
+          'error',
+          (error) => {
+            console.error(
+              'Erreur FFmpeg:',
+              error.message
+            );
 
-          reject(error);
-        })
-        .save(audioPath);
+            reject(error);
+          }
+        )
+        .save(
+          audioPath
+        );
     }
   );
 }
@@ -535,7 +847,9 @@ function extractAudio(
 async function transcribeAudio(
   audioPath
 ) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (
+    !process.env.OPENAI_API_KEY
+  ) {
     throw new Error(
       'OPENAI_API_KEY manquant dans .env'
     );
@@ -545,11 +859,14 @@ async function transcribeAudio(
     'Transcription OpenAI Whisper...'
   );
 
-  const form = new FormData();
+  const form =
+    new FormData();
 
   form.append(
     'file',
-    fs.createReadStream(audioPath)
+    fs.createReadStream(
+      audioPath
+    )
   );
 
   form.append(
@@ -565,16 +882,18 @@ async function transcribeAudio(
       process.env.OPENAI_API_KEY,
   };
 
-  const response = await axios.post(
-    'https://api.openai.com/v1/audio/transcriptions',
+  const response =
+    await axios.post(
+      'https://api.openai.com/v1/audio/transcriptions',
 
-    form,
+      form,
 
-    {
-      headers,
-      maxBodyLength: Infinity,
-    }
-  );
+      {
+        headers,
+        maxBodyLength:
+          Infinity,
+      }
+    );
 
   console.log(
     'Transcription terminée.'
@@ -589,19 +908,27 @@ async function transcribeAudio(
 
 router.post(
   '/transcribe',
-  upload.single('video'),
-  async (req, res) => {
+
+  upload.single(
+    'video'
+  ),
+
+  async (
+    req,
+    res
+  ) => {
     const tmpFiles = [];
 
     try {
       let videoPath;
 
-      // ------------------------------------------------------
+      // ======================================================
       // FICHIER UPLOADÉ
-      // ------------------------------------------------------
+      // ======================================================
 
       if (req.file) {
-        videoPath = req.file.path;
+        videoPath =
+          req.file.path;
 
         tmpFiles.push(
           videoPath
@@ -613,9 +940,9 @@ router.post(
         );
       }
 
-      // ------------------------------------------------------
+      // ======================================================
       // URL VIDÉO
-      // ------------------------------------------------------
+      // ======================================================
 
       else if (
         req.body &&
@@ -640,20 +967,22 @@ router.post(
         );
       }
 
-      // ------------------------------------------------------
+      // ======================================================
       // RIEN FOURNI
-      // ------------------------------------------------------
+      // ======================================================
 
       else {
-        return res.status(400).json({
-          error:
-            'Fournissez video ou videoUrl.',
-        });
+        return res
+          .status(400)
+          .json({
+            error:
+              'Fournissez video ou videoUrl.',
+          });
       }
 
-      // ------------------------------------------------------
+      // ======================================================
       // EXTRACTION AUDIO
-      // ------------------------------------------------------
+      // ======================================================
 
       const audioPath =
         path.join(
@@ -672,9 +1001,9 @@ router.post(
         audioPath
       );
 
-      // ------------------------------------------------------
+      // ======================================================
       // WHISPER
-      // ------------------------------------------------------
+      // ======================================================
 
       const transcript =
         await transcribeAudio(
@@ -683,6 +1012,7 @@ router.post(
 
       return res.json({
         transcript,
+
         sourceVideoPath:
           videoPath,
       });
@@ -696,24 +1026,30 @@ router.post(
           error.message
       );
 
-      return res.status(500).json({
-        error:
-          (
-            error.response &&
-            error.response.data &&
-            error.response.data.error &&
-            error.response.data.error.message
-          ) ||
-          error.message,
-      });
+      return res
+        .status(500)
+        .json({
+          error:
+            (
+              error.response &&
+              error.response.data &&
+              error.response.data.error &&
+              error.response.data.error.message
+            ) ||
+            error.message,
+        });
     } finally {
-      // ------------------------------------------------------
-      // NETTOYAGE DES FICHIERS TEMPORAIRES
-      // ------------------------------------------------------
+      // ======================================================
+      // NETTOYAGE
+      // ======================================================
 
-      for (const file of tmpFiles) {
+      for (
+        const file of tmpFiles
+      ) {
         try {
-          await fs.remove(file);
+          await fs.remove(
+            file
+          );
         } catch {
           // ignore
         }
@@ -726,7 +1062,8 @@ router.post(
 // EXPORTS
 // ============================================================
 
-module.exports = router;
+module.exports =
+  router;
 
 module.exports.downloadVideo =
   downloadVideo;
@@ -736,3 +1073,64 @@ module.exports.extractAudio =
 
 module.exports.transcribeAudio =
   transcribeAudio;
+```
+
+### Ce que cette version va faire
+
+Pour ton URL :
+
+```text
+https://www.youtube.com/watch?v=60gpH_Qlgt8
+```
+
+elle va maintenant essayer :
+
+```text
+TEST CLIENT YOUTUBE: mweb
+        ↓
+--list-formats
+        ↓
+formats disponibles ?
+        ↓
+oui → téléchargement
+non → tv
+        ↓
+TEST CLIENT YOUTUBE: tv
+        ↓
+--list-formats
+        ↓
+formats disponibles ?
+        ↓
+oui → téléchargement
+non → web
+        ↓
+TEST CLIENT YOUTUBE: web
+```
+
+Et surtout, **il n'y a plus `--format best`**.
+
+Le premier test après déploiement est important : regarde le log Railway et cherche :
+
+```text
+TEST CLIENT YOUTUBE: mweb
+```
+
+puis :
+
+```text
+TEST CLIENT YOUTUBE: tv
+```
+
+et :
+
+```text
+TEST CLIENT YOUTUBE: web
+```
+
+Si les trois donnent encore :
+
+```text
+The page needs to be reloaded.
+```
+
+alors le problème sera au niveau de l'extraction YouTube/PO Token plutôt qu'au niveau du choix du format.
