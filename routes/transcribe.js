@@ -25,15 +25,12 @@ function getPythonBin() {
     const content = fs.readFileSync(PYTHON_BIN_PATH_FILE, 'utf8').trim();
     if (content) return content;
   } catch {
-    // fichier absent (install-bgutil.sh pas encore exécuté, ou ancienne version) : on retombe
-    // sur "python3" générique, au risque du souci d'origine.
+    // fichier absent : on retombe sur "python3" générique
   }
   return 'python3';
 }
 
-// Dossier où install-bgutil.sh a copié le plugin (chemin relatif au projet, pas $HOME —
-// $HOME n'est pas un emplacement de plugin reconnu par yt-dlp). Passé explicitement à
-// yt-dlp via --plugin-dirs pour ne dépendre d'aucun emplacement "par défaut" deviné.
+// Dossier où install-bgutil.sh a copié le plugin (chemin relatif au projet, pas $HOME).
 const PLUGIN_DIR = path.join(__dirname, '..', 'yt-dlp-plugins');
 
 const PLATFORM_HOSTS = [
@@ -50,9 +47,6 @@ function isPlatformUrl(url) {
   }
 }
 
-// YouTube bloque souvent les téléchargements venant d'IP de serveurs cloud
-// ("Sign in to confirm you're not a bot"). De vrais cookies (d'un compte YouTube connecté,
-// exportés depuis un navigateur) contournent généralement ce blocage.
 let cachedCookiesPath = null;
 function getCookiesFilePath() {
   if (!process.env.YOUTUBE_COOKIES_BASE64) {
@@ -74,90 +68,92 @@ function getCookiesFilePath() {
   }
 }
 
-// Serveur BgUtils PO Token (compilé par install-bgutil.sh, démarré séparément — voir
-// server.js). Génère le jeton "Proof of Origin" que YouTube exige de plus en plus souvent.
 const BGUTIL_BASE_URL = process.env.BGUTIL_BASE_URL || 'http://127.0.0.1:4416';
 console.log('BgUtils URL: ' + BGUTIL_BASE_URL);
 
-function downloadWithYtDlp(url, destPath) {
+// Options communes réutilisées à la fois pour le vrai téléchargement et pour le diagnostic
+// --list-formats (tout sauf --format/--output, qui ne s'appliquent qu'au téléchargement).
+function buildCommonArgs() {
+  const args = [
+    '--no-playlist',
+    '--extractor-args',
+    'youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=' + BGUTIL_BASE_URL,
+    '--no-check-certificates',
+    '--no-warnings',
+    '--plugin-dirs', PLUGIN_DIR,
+  ];
+  const cookiesPath = getCookiesFilePath();
+  if (cookiesPath) {
+    args.push('--cookies', cookiesPath);
+  }
+  return args;
+}
+
+function runYtDlp(args) {
   return new Promise((resolve, reject) => {
-    console.log('Téléchargement avec yt-dlp Python: ' + url);
-
- const args = [
-  '-m', 'yt_dlp',
-  url,
-  '--output', destPath,
-  '--format', 'best',
-  '--no-playlist',
-  '--extractor-args',
-  'youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=' + BGUTIL_BASE_URL,
-  '--no-check-certificates',
-  '--no-warnings',
-  '--plugin-dirs', PLUGIN_DIR,
-  '--ffmpeg-location', ffmpegPath,
-];
-
-    const cookiesPath = getCookiesFilePath();
-    if (cookiesPath) {
-      args.push('--cookies', cookiesPath);
-      console.log('Cookies YouTube activés.');
-    }
-
     console.log('Commande: ' + getPythonBin() + ' ' + args.join(' '));
-
-    const processYtDlp = spawn(getPythonBin(), args, { env: { ...process.env } });
-
+    const proc = spawn(getPythonBin(), args, { env: { ...process.env } });
     let stdout = '';
     let stderr = '';
-
-    processYtDlp.stdout.on('data', (data) => {
-      const text = data.toString();
-      stdout += text;
-      console.log('[yt-dlp] ' + text.trim());
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
+      console.log('[yt-dlp] ' + data.toString().trim());
     });
-
-    processYtDlp.stderr.on('data', (data) => {
-      const text = data.toString();
-      stderr += text;
-      console.error('[yt-dlp] ' + text.trim());
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+      console.error('[yt-dlp] ' + data.toString().trim());
     });
-
-    processYtDlp.on('error', (error) => {
-      console.error('Erreur lancement yt-dlp:', error.message);
-      reject(error);
-    });
-
-    processYtDlp.on('close', async (code) => {
-      try {
-        if (code !== 0) {
-          reject(new Error('yt-dlp Python terminé avec le code ' + code + ': ' + stderr));
-          return;
-        }
-
-        if (await fs.pathExists(destPath)) {
-          console.log('Vidéo téléchargée: ' + destPath);
-          resolve(destPath);
-          return;
-        }
-
-        // yt-dlp peut parfois écrire une extension différente : on vérifie
-        const directory = path.dirname(destPath);
-        const baseName = path.basename(destPath, path.extname(destPath));
-        const files = await fs.readdir(directory);
-        const match = files.find((file) => file.startsWith(baseName));
-        if (match) {
-          const finalPath = path.join(directory, match);
-          console.log('Vidéo trouvée: ' + finalPath);
-          resolve(finalPath);
-          return;
-        }
-
-        reject(new Error('yt-dlp: fichier vidéo introuvable après téléchargement.'));
-      } catch (error) {
-        reject(error);
-      }
-    });
+    proc.on('error', reject);
+    proc.on('close', (code) => resolve({ code, stdout, stderr }));
   });
+}
+
+// Télécharge une vidéo YouTube/TikTok via yt-dlp. En cas d'échec, relance automatiquement un
+// diagnostic --list-formats (sans --format/--output) et l'inclut dans l'erreur renvoyée —
+// pour voir enfin CE QUE yt-dlp obtient réellement, plutôt que de deviner un énième réglage.
+async function downloadWithYtDlp(url, destPath) {
+  console.log('Téléchargement avec yt-dlp Python: ' + url);
+
+  const commonArgs = buildCommonArgs();
+  const downloadArgs = [
+    '-m', 'yt_dlp',
+    url,
+    '--output', destPath,
+    '--format', 'best',
+    '--ffmpeg-location', ffmpegPath,
+    ...commonArgs,
+  ];
+
+  const result = await runYtDlp(downloadArgs);
+
+  if (result.code !== 0) {
+    console.log('Échec du téléchargement — lancement du diagnostic --list-formats...');
+    const listArgs = ['-m', 'yt_dlp', url, '--list-formats', ...commonArgs];
+    const listResult = await runYtDlp(listArgs).catch((e) => ({ stdout: '', stderr: e.message }));
+    throw new Error(
+      'yt-dlp a échoué : ' + result.stderr +
+      '\n--- Diagnostic --list-formats ---\n' +
+      (listResult.stdout || '(aucune sortie)') +
+      (listResult.stderr ? '\n' + listResult.stderr : '')
+    );
+  }
+
+  if (await fs.pathExists(destPath)) {
+    console.log('Vidéo téléchargée: ' + destPath);
+    return destPath;
+  }
+
+  const directory = path.dirname(destPath);
+  const baseName = path.basename(destPath, path.extname(destPath));
+  const files = await fs.readdir(directory);
+  const match = files.find((file) => file.startsWith(baseName));
+  if (match) {
+    const finalPath = path.join(directory, match);
+    console.log('Vidéo trouvée: ' + finalPath);
+    return finalPath;
+  }
+
+  throw new Error('yt-dlp: fichier vidéo introuvable après téléchargement.');
 }
 
 // Télécharge une vidéo depuis une URL directe (mp4, mov, etc.) via un flux HTTP simple
@@ -176,7 +172,6 @@ async function downloadDirect(url, destPath) {
   });
 }
 
-// Point d'entrée unique : détecte YouTube/TikTok vs URL directe
 async function downloadVideo(url, destPath) {
   if (isPlatformUrl(url)) return downloadWithYtDlp(url, destPath);
   return downloadDirect(url, destPath);
