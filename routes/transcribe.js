@@ -20,7 +20,8 @@ const upload = multer({
   dest: UPLOADS_DIR,
 });
 
-// Fichier contenant le chemin exact du binaire Python utilisé par yt-dlp.
+// Fichier écrit par install-bgutil.sh contenant le chemin exact
+// du binaire Python utilisé pour installer yt-dlp.
 const PYTHON_BIN_PATH_FILE = path.join(
   __dirname,
   '..',
@@ -43,7 +44,7 @@ function getPythonBin() {
   return 'python3';
 }
 
-// Dossier du plugin yt-dlp.
+// Dossier où install-bgutil.sh a copié le plugin yt-dlp.
 const PLUGIN_DIR = path.join(
   __dirname,
   '..',
@@ -100,7 +101,6 @@ function getCookiesFilePath() {
     ).toString('utf8');
 
     fs.writeFileSync(filePath, content);
-
     cachedCookiesPath = filePath;
 
     console.log('Cookies YouTube préparés.');
@@ -125,13 +125,19 @@ console.log(
   BGUTIL_BASE_URL
 );
 
-// Options communes pour yt-dlp.
-function buildCommonArgs() {
+// Options communes utilisées pour le téléchargement
+// et pour le diagnostic --list-formats.
+function buildCommonArgs(playerClient = 'mweb') {
+  const extractorArgs =
+    playerClient === 'mweb'
+      ? `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`
+      : `youtube:player_client=${playerClient}`;
+
   const args = [
     '--no-playlist',
 
     '--extractor-args',
-    `youtube:player_client=mweb;youtubepot-bgutilhttp:base_url=${BGUTIL_BASE_URL}`,
+    extractorArgs,
 
     '--no-check-certificates',
     '--no-warnings',
@@ -149,6 +155,53 @@ function buildCommonArgs() {
   return args;
 }
 
+async function findDownloadedFile(destPath) {
+  if (await fs.pathExists(destPath)) {
+    return destPath;
+  }
+
+  const directory = path.dirname(destPath);
+
+  const baseName = path.basename(
+    destPath,
+    path.extname(destPath)
+  );
+
+  const files = await fs.readdir(directory);
+
+  const matchingFile = files.find((file) =>
+    file.startsWith(baseName)
+  );
+
+  if (!matchingFile) {
+    return null;
+  }
+
+  return path.join(
+    directory,
+    matchingFile
+  );
+}
+
+async function removeDownloadArtifacts(destPath) {
+  const directory = path.dirname(destPath);
+
+  const baseName = path.basename(
+    destPath,
+    path.extname(destPath)
+  );
+
+  const files = await fs.readdir(directory);
+
+  for (const file of files) {
+    if (file.startsWith(baseName)) {
+      await fs.remove(
+        path.join(directory, file)
+      );
+    }
+  }
+}
+
 function runYtDlp(args) {
   return new Promise((resolve, reject) => {
     const pythonBin = getPythonBin();
@@ -159,7 +212,7 @@ function runYtDlp(args) {
       args.join(' ')
     );
 
-    // Important : ne pas appeler cette variable "process",
+    // Ne pas appeler cette variable "process",
     // car process.env est utilisé ci-dessous.
     const childProcess = spawn(
       pythonBin,
@@ -211,6 +264,10 @@ function runYtDlp(args) {
 }
 
 // Télécharge une vidéo YouTube ou TikTok avec yt-dlp.
+//
+// Certains clients YouTube ne proposent pas de flux combiné
+// audio + vidéo. On demande donc les meilleurs flux séparés,
+// puis on les fusionne en MP4 avec FFmpeg.
 async function downloadWithYtDlp(
   url,
   destPath
@@ -220,48 +277,114 @@ async function downloadWithYtDlp(
     url
   );
 
-  const commonArgs = buildCommonArgs();
-
-  const downloadArgs = [
-    '-m',
-    'yt_dlp',
-
-    url,
-
-    '--output',
-    destPath,
-
-    // Télécharge les meilleurs flux vidéo et audio
-    // séparément si aucun flux combiné n'est disponible.
-    '--format',
-    'bestvideo*+bestaudio/best',
-
-    // Fusionne les flux en MP4 avec FFmpeg.
-    '--merge-output-format',
-    'mp4',
-
-    '--ffmpeg-location',
-    ffmpegPath,
-
-    ...commonArgs,
+  // mweb avec PO token est le client recommandé.
+  // Les autres clients servent de solution de repli
+  // lorsque YouTube ne renvoie que les storyboards.
+  const clientProfiles = [
+    {
+      name: 'mweb + PO token',
+      client: 'mweb',
+    },
+    {
+      name: 'android',
+      client: 'android',
+    },
+    {
+      name: 'web_safari',
+      client: 'web_safari',
+    },
+    {
+      name: 'web',
+      client: 'web',
+    },
   ];
 
-  const result = await runYtDlp(
-    downloadArgs
-  );
+  const failures = [];
 
-  if (result.code !== 0) {
+  for (const profile of clientProfiles) {
     console.log(
-      'Échec du téléchargement.',
-      'Lancement du diagnostic --list-formats...'
+      `Tentative yt-dlp avec le client ${profile.name}...`
     );
 
+    await removeDownloadArtifacts(
+      destPath
+    );
+
+    const downloadArgs = [
+      '-m',
+      'yt_dlp',
+
+      url,
+
+      '--output',
+      destPath,
+
+      // Meilleurs flux séparés, avec fallback
+      // vers un flux audio/vidéo combiné.
+      '--format',
+      'bestvideo*+bestaudio/best',
+
+      '--merge-output-format',
+      'mp4',
+
+      '--ffmpeg-location',
+      ffmpegPath,
+
+      ...buildCommonArgs(
+        profile.client
+      ),
+    ];
+
+    const result = await runYtDlp(
+      downloadArgs
+    );
+
+    const downloadedFile =
+      await findDownloadedFile(
+        destPath
+      );
+
+    if (
+      result.code === 0 &&
+      downloadedFile
+    ) {
+      console.log(
+        `Vidéo téléchargée avec ${profile.name}:`,
+        downloadedFile
+      );
+
+      return downloadedFile;
+    }
+
+    failures.push({
+      profile: profile.name,
+      output:
+        result.stderr ||
+        result.stdout ||
+        '(aucune sortie)',
+    });
+
+    console.log(
+      `Le client ${profile.name} n'a fourni aucun fichier exploitable.`
+    );
+  }
+
+  console.log(
+    'Tous les clients ont échoué.',
+    'Lancement des diagnostics --list-formats...'
+  );
+
+  const diagnostics = [];
+
+  for (const profile of clientProfiles) {
     const listArgs = [
       '-m',
       'yt_dlp',
       url,
       '--list-formats',
-      ...commonArgs,
+      ...buildCommonArgs(
+        profile.client
+      ),
     ];
 
     const listResult = await runYtDlp(
@@ -271,10 +394,8 @@ async function downloadWithYtDlp(
       stderr: error.message,
     }));
 
-    throw new Error(
-      'yt-dlp a échoué:\n' +
-        result.stderr +
-        '\n--- Diagnostic --list-formats ---\n' +
+    diagnostics.push(
+      `--- ${profile.name} ---\n` +
         (listResult.stdout ||
           '(aucune sortie)') +
         (listResult.stderr
@@ -283,50 +404,23 @@ async function downloadWithYtDlp(
     );
   }
 
-  if (await fs.pathExists(destPath)) {
-    console.log(
-      'Vidéo téléchargée:',
-      destPath
-    );
-
-    return destPath;
-  }
-
-  const directory = path.dirname(destPath);
-
-  const baseName = path.basename(
-    destPath,
-    path.extname(destPath)
-  );
-
-  const files = await fs.readdir(
-    directory
-  );
-
-  const matchingFile = files.find((file) =>
-    file.startsWith(baseName)
-  );
-
-  if (matchingFile) {
-    const finalPath = path.join(
-      directory,
-      matchingFile
-    );
-
-    console.log(
-      'Vidéo trouvée:',
-      finalPath
-    );
-
-    return finalPath;
-  }
+  const failureSummary = failures
+    .map(
+      (failure) =>
+        `--- ${failure.profile} ---\n${failure.output}`
+    )
+    .join('\n');
 
   throw new Error(
-    'yt-dlp: fichier vidéo introuvable après téléchargement.'
+    'yt-dlp n’a trouvé aucun flux vidéo ou audio exploitable. ' +
+      'YouTube renvoie uniquement des storyboards, ou la vidéo est restreinte, privée ou indisponible.\n' +
+      failureSummary +
+      '\n--- Diagnostics --list-formats ---\n' +
+      diagnostics.join('\n')
   );
 }
 
-// Téléchargement direct d'une vidéo.
+// Télécharge une vidéo depuis une URL directe.
 async function downloadDirect(
   url,
   destPath
