@@ -11,8 +11,8 @@ PYTHON_BIN="$(command -v python3)"
 echo "Binaire python3 resolu: ${PYTHON_BIN}"
 "$PYTHON_BIN" --version
 
-echo "Installation de yt-dlp..."
-"$PYTHON_BIN" -m pip install --break-system-packages --upgrade yt-dlp || "$PYTHON_BIN" -m pip install --upgrade yt-dlp
+echo "Installation de yt-dlp (canal nightly — corrections des changements YouTube plus rapides que la version stable)..."
+"$PYTHON_BIN" -m pip install --break-system-packages --upgrade --pre "yt-dlp[default]" || "$PYTHON_BIN" -m pip install --upgrade --pre "yt-dlp[default]"
 
 echo "Version yt-dlp:"
 "$PYTHON_BIN" -m yt_dlp --version
