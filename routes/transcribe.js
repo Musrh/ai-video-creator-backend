@@ -20,8 +20,7 @@ const upload = multer({
   dest: UPLOADS_DIR,
 });
 
-// Emplacement du fichier écrit par install-bgutil.sh.
-// Ce fichier contient le chemin exact du Python utilisé pour installer yt-dlp.
+// Fichier contenant le chemin exact du binaire Python utilisé par yt-dlp.
 const PYTHON_BIN_PATH_FILE = path.join(
   __dirname,
   '..',
@@ -44,8 +43,12 @@ function getPythonBin() {
   return 'python3';
 }
 
-// Dossier où install-bgutil.sh a copié le plugin yt-dlp.
-const PLUGIN_DIR = path.join(__dirname, '..', 'yt-dlp-plugins');
+// Dossier du plugin yt-dlp.
+const PLUGIN_DIR = path.join(
+  __dirname,
+  '..',
+  'yt-dlp-plugins'
+);
 
 const PLATFORM_HOSTS = [
   'youtube.com',
@@ -62,7 +65,8 @@ function isPlatformUrl(url) {
 
     return PLATFORM_HOSTS.some(
       (platform) =>
-        host === platform || host.endsWith(`.${platform}`)
+        host === platform ||
+        host.endsWith(`.${platform}`)
     );
   } catch {
     return false;
@@ -73,7 +77,10 @@ let cachedCookiesPath = null;
 
 function getCookiesFilePath() {
   if (!process.env.YOUTUBE_COOKIES_BASE64) {
-    console.log('YOUTUBE_COOKIES_BASE64 non configuré.');
+    console.log(
+      'YOUTUBE_COOKIES_BASE64 non configuré.'
+    );
+
     return null;
   }
 
@@ -81,7 +88,10 @@ function getCookiesFilePath() {
     return cachedCookiesPath;
   }
 
-  const filePath = path.join(os.tmpdir(), 'yt-cookies.txt');
+  const filePath = path.join(
+    os.tmpdir(),
+    'yt-cookies.txt'
+  );
 
   try {
     const content = Buffer.from(
@@ -110,9 +120,12 @@ const BGUTIL_BASE_URL =
   process.env.BGUTIL_BASE_URL ||
   'http://127.0.0.1:4416';
 
-console.log('BgUtils URL:', BGUTIL_BASE_URL);
+console.log(
+  'BgUtils URL:',
+  BGUTIL_BASE_URL
+);
 
-// Options communes utilisées par le téléchargement et le diagnostic.
+// Options communes pour yt-dlp.
 function buildCommonArgs() {
   const args = [
     '--no-playlist',
@@ -146,36 +159,48 @@ function runYtDlp(args) {
       args.join(' ')
     );
 
-    const process = spawn(pythonBin, args, {
-      env: {
-        ...process.env,
-      },
-    });
+    // Important : ne pas appeler cette variable "process",
+    // car process.env est utilisé ci-dessous.
+    const childProcess = spawn(
+      pythonBin,
+      args,
+      {
+        env: {
+          ...process.env,
+        },
+      }
+    );
 
     let stdout = '';
     let stderr = '';
 
-    process.stdout.on('data', (data) => {
+    childProcess.stdout.on('data', (data) => {
       const output = data.toString();
 
       stdout += output;
 
-      console.log('[yt-dlp]', output.trim());
+      console.log(
+        '[yt-dlp]',
+        output.trim()
+      );
     });
 
-    process.stderr.on('data', (data) => {
+    childProcess.stderr.on('data', (data) => {
       const output = data.toString();
 
       stderr += output;
 
-      console.error('[yt-dlp]', output.trim());
+      console.error(
+        '[yt-dlp]',
+        output.trim()
+      );
     });
 
-    process.on('error', (error) => {
+    childProcess.on('error', (error) => {
       reject(error);
     });
 
-    process.on('close', (code) => {
+    childProcess.on('close', (code) => {
       resolve({
         code,
         stdout,
@@ -186,16 +211,10 @@ function runYtDlp(args) {
 }
 
 // Télécharge une vidéo YouTube ou TikTok avec yt-dlp.
-//
-// La sélection suivante est importante :
-// - bestvideo* : meilleur flux vidéo disponible
-// - bestaudio : meilleur flux audio disponible
-// - /best : fallback vers un flux audio/vidéo combiné
-//
-// Certains clients YouTube ne proposent pas de flux combiné.
-// Dans ce cas, yt-dlp télécharge séparément l'audio et la vidéo,
-// puis FFmpeg les fusionne en MP4.
-async function downloadWithYtDlp(url, destPath) {
+async function downloadWithYtDlp(
+  url,
+  destPath
+) {
   console.log(
     'Téléchargement avec yt-dlp Python:',
     url
@@ -212,9 +231,12 @@ async function downloadWithYtDlp(url, destPath) {
     '--output',
     destPath,
 
+    // Télécharge les meilleurs flux vidéo et audio
+    // séparément si aucun flux combiné n'est disponible.
     '--format',
     'bestvideo*+bestaudio/best',
 
+    // Fusionne les flux en MP4 avec FFmpeg.
     '--merge-output-format',
     'mp4',
 
@@ -224,7 +246,9 @@ async function downloadWithYtDlp(url, destPath) {
     ...commonArgs,
   ];
 
-  const result = await runYtDlp(downloadArgs);
+  const result = await runYtDlp(
+    downloadArgs
+  );
 
   if (result.code !== 0) {
     console.log(
@@ -240,18 +264,19 @@ async function downloadWithYtDlp(url, destPath) {
       ...commonArgs,
     ];
 
-    const listResult = await runYtDlp(listArgs).catch(
-      (error) => ({
-        stdout: '',
-        stderr: error.message,
-      })
-    );
+    const listResult = await runYtDlp(
+      listArgs
+    ).catch((error) => ({
+      stdout: '',
+      stderr: error.message,
+    }));
 
     throw new Error(
       'yt-dlp a échoué:\n' +
         result.stderr +
         '\n--- Diagnostic --list-formats ---\n' +
-        (listResult.stdout || '(aucune sortie)') +
+        (listResult.stdout ||
+          '(aucune sortie)') +
         (listResult.stderr
           ? `\n${listResult.stderr}`
           : '')
@@ -268,12 +293,15 @@ async function downloadWithYtDlp(url, destPath) {
   }
 
   const directory = path.dirname(destPath);
+
   const baseName = path.basename(
     destPath,
     path.extname(destPath)
   );
 
-  const files = await fs.readdir(directory);
+  const files = await fs.readdir(
+    directory
+  );
 
   const matchingFile = files.find((file) =>
     file.startsWith(baseName)
@@ -298,8 +326,11 @@ async function downloadWithYtDlp(url, destPath) {
   );
 }
 
-// Télécharge une vidéo depuis une URL directe.
-async function downloadDirect(url, destPath) {
+// Téléchargement direct d'une vidéo.
+async function downloadDirect(
+  url,
+  destPath
+) {
   console.log(
     'Téléchargement direct:',
     url
@@ -311,7 +342,9 @@ async function downloadDirect(url, destPath) {
     maxBodyLength: Infinity,
   });
 
-  const writer = fs.createWriteStream(destPath);
+  const writer = fs.createWriteStream(
+    destPath
+  );
 
   response.data.pipe(writer);
 
@@ -326,19 +359,35 @@ async function downloadDirect(url, destPath) {
     });
 
     writer.on('error', reject);
-    response.data.on('error', reject);
+
+    response.data.on(
+      'error',
+      reject
+    );
   });
 }
 
-async function downloadVideo(url, destPath) {
+async function downloadVideo(
+  url,
+  destPath
+) {
   if (isPlatformUrl(url)) {
-    return downloadWithYtDlp(url, destPath);
+    return downloadWithYtDlp(
+      url,
+      destPath
+    );
   }
 
-  return downloadDirect(url, destPath);
+  return downloadDirect(
+    url,
+    destPath
+  );
 }
 
-function extractAudio(videoPath, audioPath) {
+function extractAudio(
+  videoPath,
+  audioPath
+) {
   return new Promise((resolve, reject) => {
     console.log(
       'Extraction audio:',
@@ -350,7 +399,9 @@ function extractAudio(videoPath, audioPath) {
       .audioCodec('libmp3lame')
       .format('mp3')
       .on('end', () => {
-        console.log('Extraction audio terminée.');
+        console.log(
+          'Extraction audio terminée.'
+        );
 
         resolve();
       })
@@ -366,7 +417,9 @@ function extractAudio(videoPath, audioPath) {
   });
 }
 
-async function transcribeAudio(audioPath) {
+async function transcribeAudio(
+  audioPath
+) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error(
       'OPENAI_API_KEY manquant dans les variables d’environnement.'
@@ -391,6 +444,7 @@ async function transcribeAudio(audioPath) {
 
   const headers = {
     ...form.getHeaders(),
+
     Authorization:
       `Bearer ${process.env.OPENAI_API_KEY}`,
   };
@@ -423,7 +477,9 @@ router.post(
       if (req.file) {
         videoPath = req.file.path;
 
-        temporaryFiles.push(videoPath);
+        temporaryFiles.push(
+          videoPath
+        );
 
         console.log(
           'Vidéo reçue:',
@@ -443,7 +499,9 @@ router.post(
           targetPath
         );
 
-        temporaryFiles.push(videoPath);
+        temporaryFiles.push(
+          videoPath
+        );
       } else {
         return res.status(400).json({
           error:
@@ -456,16 +514,19 @@ router.post(
         `audio_${Date.now()}.mp3`
       );
 
-      temporaryFiles.push(audioPath);
+      temporaryFiles.push(
+        audioPath
+      );
 
       await extractAudio(
         videoPath,
         audioPath
       );
 
-      const transcript = await transcribeAudio(
-        audioPath
-      );
+      const transcript =
+        await transcribeAudio(
+          audioPath
+        );
 
       return res.json({
         transcript,
@@ -481,7 +542,8 @@ router.post(
 
       console.error(
         'Erreur transcription:',
-        error.response?.data || error.message
+        error.response?.data ||
+          error.message
       );
 
       return res.status(500).json({
